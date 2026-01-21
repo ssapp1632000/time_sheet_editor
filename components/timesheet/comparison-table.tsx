@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
-import { AlertCircle, CheckCircle2, Clock } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,11 +18,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { EditableTimeCell } from "./editable-time-cell";
-import { calculateNetHours } from "@/lib/utils/time";
+import { calculateNetHoursWithDates } from "@/lib/utils/time";
 import type {
   ComparisonData,
   DayComparison,
   DayUpdate,
+  BulkDeleteRequest,
 } from "@/types/comparison";
 
 interface ComparisonTableProps {
@@ -32,10 +33,12 @@ interface ComparisonTableProps {
   onApplyComplete?: () => void;
 }
 
-// Track the actual values for each day
+// Track the actual values for each day (now with dates)
 interface DayValues {
-  checkIn: string;
-  checkOut: string;
+  checkInDate: string; // DD/MM/YYYY
+  checkInTime: string; // HH:mm
+  checkOutDate: string; // DD/MM/YYYY
+  checkOutTime: string; // HH:mm
 }
 
 export function ComparisonTable({
@@ -50,8 +53,10 @@ export function ComparisonTable({
     data.days.forEach((day) => {
       // Default to xlsx values, fall back to mongodb if xlsx is empty
       map.set(day.date, {
-        checkIn: day.xlsx.in1 || day.mongo.firstCheckIn || "",
-        checkOut: day.xlsx.out2 || day.mongo.lastCheckOut || "",
+        checkInDate: day.xlsx.in1Date || day.mongo.firstCheckInDate || day.date,
+        checkInTime: day.xlsx.in1 || day.mongo.firstCheckIn || "",
+        checkOutDate: day.xlsx.out2Date || day.mongo.lastCheckOutDate || day.date,
+        checkOutTime: day.xlsx.out2 || day.mongo.lastCheckOut || "",
       });
     });
     return map;
@@ -62,13 +67,32 @@ export function ComparisonTable({
     return new Set(data.days.map((day) => day.date));
   });
 
+  // Track days marked for deletion
+  const [daysToDelete, setDaysToDelete] = useState<Set<string>>(new Set());
+
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Toggle selection for a day
   const toggleDaySelection = useCallback((date: string) => {
     setSelectedDays((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(date)) {
+        newSet.delete(date);
+      } else {
+        newSet.add(date);
+      }
+      return newSet;
+    });
+  }, []);
+
+  // Toggle delete mark for a day
+  const toggleDeleteMark = useCallback((date: string) => {
+    setDaysToDelete((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(date)) {
         newSet.delete(date);
@@ -104,7 +128,12 @@ export function ComparisonTable({
     (date: string, field: keyof DayValues, value: string) => {
       setValues((prev) => {
         const newMap = new Map(prev);
-        const current = newMap.get(date) || { checkIn: "", checkOut: "" };
+        const current = newMap.get(date) || {
+          checkInDate: date,
+          checkInTime: "",
+          checkOutDate: date,
+          checkOutTime: "",
+        };
         newMap.set(date, { ...current, [field]: value });
         return newMap;
       });
@@ -114,7 +143,14 @@ export function ComparisonTable({
 
   // Get current values for a day
   const getValues = (date: string): DayValues => {
-    return values.get(date) || { checkIn: "", checkOut: "" };
+    return (
+      values.get(date) || {
+        checkInDate: date,
+        checkInTime: "",
+        checkOutDate: date,
+        checkOutTime: "",
+      }
+    );
   };
 
   // Calculate updates to apply (only selected days)
@@ -128,11 +164,13 @@ export function ComparisonTable({
       const dayValues = getValues(day.date);
 
       // Only include if there's actual data to update
-      if (dayValues.checkIn || dayValues.checkOut) {
+      if (dayValues.checkInTime || dayValues.checkOutTime) {
         updates.push({
           date: day.date,
-          checkIn: dayValues.checkIn || undefined,
-          checkOut: dayValues.checkOut || undefined,
+          checkInDate: dayValues.checkInDate,
+          checkInTime: dayValues.checkInTime || undefined,
+          checkOutDate: dayValues.checkOutDate,
+          checkOutTime: dayValues.checkOutTime || undefined,
         });
       }
     });
@@ -173,6 +211,38 @@ export function ComparisonTable({
     }
   };
 
+  // Handle bulk delete
+  const handleDeleteSelected = async () => {
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    try {
+      const deleteRequest: BulkDeleteRequest = {
+        dates: Array.from(daysToDelete),
+      };
+
+      const response = await fetch(`/api/attendance/${employeeId}/delete`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(deleteRequest),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to delete");
+      }
+
+      setIsDeleteConfirmOpen(false);
+      setDaysToDelete(new Set());
+      onUpdate(); // Refresh data
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "Delete failed");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const updates = getUpdates();
 
   return (
@@ -209,12 +279,22 @@ export function ComparisonTable({
             {selectedDays.size}/{data.days.length} days selected
           </span>
         </div>
-        <Button
-          onClick={() => setIsConfirmOpen(true)}
-          disabled={updates.length === 0}
-        >
-          Apply Selected Changes ({updates.length})
-        </Button>
+        <div className="flex items-center gap-2">
+          {daysToDelete.size > 0 && (
+            <Button
+              variant="destructive"
+              onClick={() => setIsDeleteConfirmOpen(true)}
+            >
+              Delete Selected ({daysToDelete.size})
+            </Button>
+          )}
+          <Button
+            onClick={() => setIsConfirmOpen(true)}
+            disabled={updates.length === 0}
+          >
+            Apply Selected Changes ({updates.length})
+          </Button>
+        </div>
       </div>
 
       {/* Days list */}
@@ -231,12 +311,14 @@ export function ComparisonTable({
               }
               isSelected={selectedDays.has(day.date)}
               onToggleSelect={() => toggleDaySelection(day.date)}
+              isMarkedForDelete={daysToDelete.has(day.date)}
+              onToggleDelete={() => toggleDeleteMark(day.date)}
             />
           ))}
         </div>
       </ScrollArea>
 
-      {/* Confirmation Dialog */}
+      {/* Update Confirmation Dialog */}
       <Dialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
         <DialogContent>
           <DialogHeader>
@@ -255,10 +337,18 @@ export function ComparisonTable({
                   className="flex items-center justify-between py-1 border-b"
                 >
                   <span className="font-mono">{update.date}</span>
-                  <span className="text-muted-foreground">
-                    {update.checkIn && `IN: ${update.checkIn}`}
-                    {update.checkIn && update.checkOut && " | "}
-                    {update.checkOut && `OUT: ${update.checkOut}`}
+                  <span className="text-muted-foreground text-xs">
+                    {update.checkInTime && (
+                      <span>
+                        IN: {update.checkInDate} {update.checkInTime}
+                      </span>
+                    )}
+                    {update.checkInTime && update.checkOutTime && " | "}
+                    {update.checkOutTime && (
+                      <span>
+                        OUT: {update.checkOutDate} {update.checkOutTime}
+                      </span>
+                    )}
                   </span>
                 </div>
               ))}
@@ -291,6 +381,64 @@ export function ComparisonTable({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Deletion</DialogTitle>
+            <DialogDescription>
+              You are about to delete {daysToDelete.size} attendance records
+              from MongoDB. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-60 overflow-y-auto">
+            <div className="space-y-2 text-sm">
+              {Array.from(daysToDelete)
+                .slice(0, 10)
+                .map((date) => (
+                  <div
+                    key={date}
+                    className="flex items-center py-1 border-b text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    <span className="font-mono">{date}</span>
+                  </div>
+                ))}
+              {daysToDelete.size > 10 && (
+                <div className="text-muted-foreground text-center py-2">
+                  ...and {daysToDelete.size - 10} more
+                </div>
+              )}
+            </div>
+          </div>
+
+          {deleteError && (
+            <div className="text-sm text-destructive flex items-center gap-2">
+              <AlertCircle className="h-4 w-4" />
+              {deleteError}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsDeleteConfirmOpen(false)}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteSelected}
+              disabled={isDeleting}
+            >
+              {isDeleting ? "Deleting..." : "Confirm Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -303,10 +451,30 @@ interface DayRowProps {
   onValueChange: (field: keyof DayValues, value: string) => void;
   isSelected: boolean;
   onToggleSelect: () => void;
+  isMarkedForDelete: boolean;
+  onToggleDelete: () => void;
 }
 
-function DayRow({ day, index, values, onValueChange, isSelected, onToggleSelect }: DayRowProps) {
+function DayRow({
+  day,
+  index,
+  values,
+  onValueChange,
+  isSelected,
+  onToggleSelect,
+  isMarkedForDelete,
+  onToggleDelete,
+}: DayRowProps) {
   const hasIssues = day.issues.length > 0;
+  const hasMongoData = day.mongo.firstCheckIn || day.mongo.lastCheckOut;
+
+  // Calculate net hours with dates
+  const calculatedNetHours = calculateNetHoursWithDates(
+    values.checkInDate,
+    values.checkInTime,
+    values.checkOutDate,
+    values.checkOutTime
+  );
 
   return (
     <motion.div
@@ -319,7 +487,8 @@ function DayRow({ day, index, values, onValueChange, isSelected, onToggleSelect 
           "transition-all",
           hasIssues && "border-yellow-400 dark:border-yellow-600",
           day.discrepancies.lowHours && "bg-yellow-50/50 dark:bg-yellow-950/20",
-          !isSelected && "opacity-50"
+          !isSelected && "opacity-50",
+          isMarkedForDelete && "border-destructive bg-destructive/10"
         )}
       >
         <CardHeader className="py-3 px-4">
@@ -336,6 +505,17 @@ function DayRow({ day, index, values, onValueChange, isSelected, onToggleSelect 
               </span>
             </CardTitle>
             <div className="flex items-center gap-2">
+              {hasMongoData && (
+                <Button
+                  variant={isMarkedForDelete ? "destructive" : "ghost"}
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={onToggleDelete}
+                  title={isMarkedForDelete ? "Unmark for deletion" : "Mark for deletion"}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
               {hasIssues ? (
                 <Badge variant="warning" className="flex items-center gap-1">
                   <AlertCircle className="h-3 w-3" />
@@ -360,7 +540,10 @@ function DayRow({ day, index, values, onValueChange, isSelected, onToggleSelect 
           {hasIssues && (
             <div className="mt-2 space-y-1">
               {day.issues.map((issue, i) => (
-                <p key={i} className="text-xs text-yellow-700 dark:text-yellow-400">
+                <p
+                  key={i}
+                  className="text-xs text-yellow-700 dark:text-yellow-400"
+                >
                   {issue}
                 </p>
               ))}
@@ -373,9 +556,13 @@ function DayRow({ day, index, values, onValueChange, isSelected, onToggleSelect 
             {/* Check-in cell */}
             <EditableTimeCell
               xlsxValue={day.xlsx.in1}
+              xlsxDate={day.xlsx.in1Date}
               mongoValue={day.mongo.firstCheckIn}
-              value={values.checkIn}
-              onChange={(value) => onValueChange("checkIn", value)}
+              mongoDate={day.mongo.firstCheckInDate}
+              date={values.checkInDate}
+              time={values.checkInTime}
+              onDateChange={(date) => onValueChange("checkInDate", date)}
+              onTimeChange={(time) => onValueChange("checkInTime", time)}
               hasDiscrepancy={day.discrepancies.in1Missing}
               label="Check In (1 IN)"
             />
@@ -383,9 +570,13 @@ function DayRow({ day, index, values, onValueChange, isSelected, onToggleSelect 
             {/* Check-out cell */}
             <EditableTimeCell
               xlsxValue={day.xlsx.out2}
+              xlsxDate={day.xlsx.out2Date}
               mongoValue={day.mongo.lastCheckOut}
-              value={values.checkOut}
-              onChange={(value) => onValueChange("checkOut", value)}
+              mongoDate={day.mongo.lastCheckOutDate}
+              date={values.checkOutDate}
+              time={values.checkOutTime}
+              onDateChange={(date) => onValueChange("checkOutDate", date)}
+              onTimeChange={(time) => onValueChange("checkOutTime", time)}
               hasDiscrepancy={day.discrepancies.out2Missing}
               label="Check Out (2 OUT)"
             />
@@ -395,9 +586,9 @@ function DayRow({ day, index, values, onValueChange, isSelected, onToggleSelect 
           <div className="mt-3 pt-3 border-t flex items-center gap-4 text-sm flex-wrap">
             <span className="text-muted-foreground">Net Hours:</span>
             {/* Calculated net hours based on current values */}
-            {calculateNetHours(values.checkIn, values.checkOut) && (
+            {calculatedNetHours && (
               <span className="font-mono text-primary font-semibold">
-                Calculated: <strong>{calculateNetHours(values.checkIn, values.checkOut)}</strong>
+                Calculated: <strong>{calculatedNetHours}</strong>
               </span>
             )}
             {day.xlsx.netWorkHours && (

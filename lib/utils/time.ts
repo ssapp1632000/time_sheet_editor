@@ -141,8 +141,9 @@ export function utcToDubaiTime(utcDate: Date | string): string | null {
 }
 
 /**
- * Calculate net hours between two HH:mm time strings
+ * Calculate net hours between two HH:mm time strings (same day only)
  * Returns the difference in HH:mm format
+ * @deprecated Use calculateNetHoursWithDates for proper overnight handling
  */
 export function calculateNetHours(checkIn: string | null, checkOut: string | null): string | null {
   if (!checkIn || !checkOut) return null;
@@ -167,4 +168,99 @@ export function calculateNetHours(checkIn: string | null, checkOut: string | nul
   const minutes = diffMinutes % 60;
 
   return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+}
+
+/**
+ * Convert time string (HH:mm) to total minutes
+ */
+export function timeToMinutes(time: string): number {
+  const timeRegex = /^(\d{1,2}):(\d{2})$/;
+  const match = time.match(timeRegex);
+  if (!match) return 0;
+  return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+}
+
+/**
+ * Detect if checkout is on the next day based on time comparison
+ * If checkout time <= checkin time, assume overnight shift
+ */
+export function detectCheckoutDate(
+  rowDate: string,
+  checkInTime: string | null,
+  checkOutTime: string | null
+): string {
+  if (!checkInTime || !checkOutTime) return rowDate;
+
+  const inMinutes = timeToMinutes(checkInTime);
+  const outMinutes = timeToMinutes(checkOutTime);
+
+  // If checkout <= checkin, it's overnight - return next day
+  if (outMinutes <= inMinutes) {
+    const date = parseDateString(rowDate);
+    if (!date) return rowDate;
+    const nextDay = new Date(date.getTime() + 24 * 60 * 60 * 1000);
+    return formatDateString(nextDay);
+  }
+
+  return rowDate;
+}
+
+/**
+ * Parse date and time strings into a Date object
+ */
+export function parseDateTimeString(dateStr: string, timeStr: string): Date | null {
+  const date = parseDateString(dateStr);
+  if (!date) return null;
+
+  const timeRegex = /^(\d{1,2}):(\d{2})$/;
+  const match = timeStr.match(timeRegex);
+  if (!match) return null;
+
+  const hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+
+  date.setHours(hours, minutes, 0, 0);
+  return date;
+}
+
+/**
+ * Calculate net hours between two full datetime values (date + time)
+ * Properly handles overnight shifts and multi-day periods
+ * Returns the difference in HH:mm format
+ */
+export function calculateNetHoursWithDates(
+  checkInDate: string,
+  checkInTime: string | null,
+  checkOutDate: string,
+  checkOutTime: string | null
+): string | null {
+  if (!checkInTime || !checkOutTime) return null;
+
+  const checkIn = parseDateTimeString(checkInDate, checkInTime);
+  const checkOut = parseDateTimeString(checkOutDate, checkOutTime);
+
+  if (!checkIn || !checkOut) return null;
+
+  const diffMs = checkOut.getTime() - checkIn.getTime();
+  if (diffMs < 0) return null; // Invalid: checkout before checkin
+
+  const diffMinutes = Math.floor(diffMs / (1000 * 60));
+  const hours = Math.floor(diffMinutes / 60);
+  const minutes = diffMinutes % 60;
+
+  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+}
+
+/**
+ * Convert UTC Date to Dubai date string (DD/MM/YYYY)
+ */
+export function utcToDubaiDate(utcDate: Date | string): string | null {
+  if (!utcDate) return null;
+  try {
+    const d = new Date(utcDate);
+    const dubaiTime = toZonedTime(d, DUBAI_TIMEZONE);
+    return format(dubaiTime, "dd/MM/yyyy");
+  } catch {
+    return null;
+  }
 }

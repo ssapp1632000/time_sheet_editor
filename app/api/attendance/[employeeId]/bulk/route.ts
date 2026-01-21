@@ -37,35 +37,84 @@ export async function POST(
 
     for (const update of body.updates) {
       try {
-        const date = parseDateString(update.date);
-        if (!date) {
-          errors.push(`Invalid date format: ${update.date}`);
+        // Parse the row date (used for record lookup)
+        const rowDate = parseDateString(update.date);
+        if (!rowDate) {
+          errors.push(`Invalid row date format: ${update.date}`);
+          continue;
+        }
+
+        // Parse the check-in date (can be different from row date)
+        const checkInDate = parseDateString(update.checkInDate);
+        if (!checkInDate && update.checkInTime) {
+          errors.push(`Invalid check-in date format: ${update.checkInDate}`);
+          continue;
+        }
+
+        // Parse the check-out date (can be different from row date for overnight shifts)
+        const checkOutDate = parseDateString(update.checkOutDate);
+        if (!checkOutDate && update.checkOutTime) {
+          errors.push(`Invalid check-out date format: ${update.checkOutDate}`);
           continue;
         }
 
         // The "day" field represents the calendar date from XLSX (e.g., 01/01/2026)
         // Store it as UTC midnight of that date - NOT converted from Dubai timezone
         // This ensures the day field always matches the XLSX date regardless of check-in time
-        const dayUTC = new Date(Date.UTC(
-          date.getFullYear(),
-          date.getMonth(),
-          date.getDate(),
-          0, 0, 0, 0
-        ));
+        const dayUTC = new Date(
+          Date.UTC(
+            rowDate.getFullYear(),
+            rowDate.getMonth(),
+            rowDate.getDate(),
+            0,
+            0,
+            0,
+            0
+          )
+        );
 
         // Query range: find records where day matches this calendar date
-        const dayEndUTC = new Date(Date.UTC(
-          date.getFullYear(),
-          date.getMonth(),
-          date.getDate(),
-          23, 59, 59, 999
-        ));
+        const dayEndUTC = new Date(
+          Date.UTC(
+            rowDate.getFullYear(),
+            rowDate.getMonth(),
+            rowDate.getDate(),
+            23,
+            59,
+            59,
+            999
+          )
+        );
 
         // Find existing attendance record for this day
         const existingRecord = await attendanceCollection.findOne({
           user: user._id,
           day: { $gte: dayUTC, $lte: dayEndUTC },
         });
+
+        // Convert times to UTC using their respective dates
+        // This properly handles overnight shifts where check-out is on a different day
+        const checkInTimeUTC =
+          update.checkInTime && checkInDate
+            ? dubaiTimeToUTC(checkInDate, update.checkInTime)
+            : null;
+
+        const checkOutTimeUTC =
+          update.checkOutTime && checkOutDate
+            ? dubaiTimeToUTC(checkOutDate, update.checkOutTime)
+            : null;
+
+        // Calculate totalSeconds - now works correctly for overnight shifts
+        let totalSeconds = 0;
+        if (checkInTimeUTC && checkOutTimeUTC) {
+          totalSeconds = Math.floor(
+            (checkOutTimeUTC.getTime() - checkInTimeUTC.getTime()) / 1000
+          );
+          // Ensure positive value (should always be positive now with proper dates)
+          if (totalSeconds < 0) {
+            totalSeconds = 0;
+          }
+        }
 
         if (existingRecord) {
           // Update existing record
@@ -80,14 +129,6 @@ export async function POST(
           const checkOutLocation = lastPeriod?.checkOutLocation;
           const checkoutType = lastPeriod?.checkoutType || "manual";
 
-          // Convert times to UTC
-          const checkInTimeUTC = update.checkIn
-            ? dubaiTimeToUTC(date, update.checkIn)
-            : null;
-          const checkOutTimeUTC = update.checkOut
-            ? dubaiTimeToUTC(date, update.checkOut)
-            : null;
-
           // Create single new period with all data
           const newPeriod = {
             startTime: checkInTimeUTC as Date,
@@ -96,14 +137,6 @@ export async function POST(
             ...(checkInLocation && { checkInLocation }),
             ...(checkOutLocation && { checkOutLocation }),
           };
-
-          // Calculate totalSeconds
-          let totalSeconds = 0;
-          if (checkInTimeUTC && checkOutTimeUTC) {
-            totalSeconds = Math.floor(
-              (checkOutTimeUTC.getTime() - checkInTimeUTC.getTime()) / 1000
-            );
-          }
 
           // Update with new periods array (single object) and remove intervals
           await attendanceCollection.updateOne(
@@ -122,19 +155,6 @@ export async function POST(
           updatedCount++;
         } else {
           // Create new attendance record
-          // Convert Dubai times to UTC for storage
-          const checkInTimeUTC = update.checkIn
-            ? dubaiTimeToUTC(date, update.checkIn)
-            : null;
-          const checkOutTimeUTC = update.checkOut
-            ? dubaiTimeToUTC(date, update.checkOut)
-            : null;
-
-          const totalSeconds =
-            checkInTimeUTC && checkOutTimeUTC
-              ? Math.floor((checkOutTimeUTC.getTime() - checkInTimeUTC.getTime()) / 1000)
-              : 0;
-
           const newRecord = {
             _id: new ObjectId(),
             user: user._id,

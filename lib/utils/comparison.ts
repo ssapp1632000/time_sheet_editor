@@ -8,7 +8,13 @@ import type {
   MongoDayData,
 } from "@/types/comparison";
 import type { AttendanceDayDocument } from "@/lib/db/mongodb";
-import { secondsToHoursMinutes, timeStringToHours, utcToDubaiTime } from "@/lib/utils/time";
+import {
+  secondsToHoursMinutes,
+  timeStringToHours,
+  utcToDubaiTime,
+  utcToDubaiDate,
+  detectCheckoutDate,
+} from "@/lib/utils/time";
 
 const LOW_HOURS_MIN = 3; // Minimum hours threshold
 const LOW_HOURS_MAX = 4; // Maximum hours threshold for warning
@@ -62,11 +68,21 @@ export function compareTimeData(
 /**
  * Extract relevant XLSX data for a day
  * Note: XLSX times are already in Dubai timezone
+ * Includes auto-detection of overnight shifts for checkout date
  */
 function extractXlsxData(entry: TimeEntry): XlsxDayData {
+  // Check-in date is always the row date
+  const in1Date = entry.date;
+
+  // Check-out date: auto-detect overnight shift
+  // If checkout time <= checkin time, assume next day
+  const out2Date = detectCheckoutDate(entry.date, entry.in1, entry.out2);
+
   return {
     in1: entry.in1,
+    in1Date,
     out2: entry.out2,
+    out2Date,
     netWorkHours: entry.netWorkHours,
   };
 }
@@ -74,6 +90,7 @@ function extractXlsxData(entry: TimeEntry): XlsxDayData {
 /**
  * Extract first check-in and last check-out from MongoDB record
  * Note: MongoDB stores UTC times, we convert them to Dubai timezone for display
+ * Now includes both date and time for each value
  */
 function extractMongoData(
   record: AttendanceDayDocument | undefined
@@ -81,26 +98,32 @@ function extractMongoData(
   if (!record) {
     return {
       firstCheckIn: null,
+      firstCheckInDate: null,
       lastCheckOut: null,
+      lastCheckOutDate: null,
       totalHours: null,
     };
   }
 
   let firstCheckIn: string | null = null;
+  let firstCheckInDate: string | null = null;
   let lastCheckOut: string | null = null;
+  let lastCheckOutDate: string | null = null;
 
   // Try periods first
   if (record.periods && record.periods.length > 0) {
     const firstPeriod = record.periods[0];
     if (firstPeriod.startTime) {
-      // Convert UTC to Dubai timezone for display
+      // Convert UTC to Dubai timezone for display (both time and date)
       firstCheckIn = utcToDubaiTime(firstPeriod.startTime);
+      firstCheckInDate = utcToDubaiDate(firstPeriod.startTime);
     }
 
     const lastPeriod = record.periods[record.periods.length - 1];
     if (lastPeriod.endTime) {
-      // Convert UTC to Dubai timezone for display
+      // Convert UTC to Dubai timezone for display (both time and date)
       lastCheckOut = utcToDubaiTime(lastPeriod.endTime);
+      lastCheckOutDate = utcToDubaiDate(lastPeriod.endTime);
     }
   }
 
@@ -108,11 +131,13 @@ function extractMongoData(
   if (!firstCheckIn && record.intervals && record.intervals.length > 0) {
     // Convert UTC to Dubai timezone for display
     firstCheckIn = utcToDubaiTime(record.intervals[0]);
+    firstCheckInDate = utcToDubaiDate(record.intervals[0]);
   }
 
   if (!lastCheckOut && record.intervals && record.intervals.length > 1) {
     // Convert UTC to Dubai timezone for display
     lastCheckOut = utcToDubaiTime(record.intervals[record.intervals.length - 1]);
+    lastCheckOutDate = utcToDubaiDate(record.intervals[record.intervals.length - 1]);
   }
 
   // Calculate total hours from totalSeconds
@@ -123,7 +148,9 @@ function extractMongoData(
 
   return {
     firstCheckIn,
+    firstCheckInDate,
     lastCheckOut,
+    lastCheckOutDate,
     totalHours,
   };
 }

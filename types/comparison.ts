@@ -17,7 +17,9 @@ export interface Discrepancies {
  */
 export interface XlsxDayData {
   in1: string | null;
+  in1Date: string; // DD/MM/YYYY - the date for check-in
   out2: string | null;
+  out2Date: string; // DD/MM/YYYY - auto-detected for overnight shifts
   netWorkHours: string | null;
 }
 
@@ -26,7 +28,9 @@ export interface XlsxDayData {
  */
 export interface MongoDayData {
   firstCheckIn: string | null;
+  firstCheckInDate: string | null; // DD/MM/YYYY - extracted from MongoDB datetime
   lastCheckOut: string | null;
+  lastCheckOutDate: string | null; // DD/MM/YYYY - extracted from MongoDB datetime
   totalHours: string | null;
 }
 
@@ -80,9 +84,11 @@ export interface ComparisonResponse {
  * Update request for a single day
  */
 export interface DayUpdate {
-  date: string; // DD/MM/YYYY
-  checkIn?: string | null; // HH:mm
-  checkOut?: string | null; // HH:mm
+  date: string; // DD/MM/YYYY - the row date (for record lookup)
+  checkInDate: string; // DD/MM/YYYY - actual check-in date
+  checkInTime?: string; // HH:mm
+  checkOutDate: string; // DD/MM/YYYY - actual check-out date
+  checkOutTime?: string; // HH:mm
 }
 
 /**
@@ -98,5 +104,21 @@ export interface BulkUpdateRequest {
 export interface BulkUpdateResponse {
   success: boolean;
   updatedCount: number;
+  errors?: string[];
+}
+
+/**
+ * Bulk delete request
+ */
+export interface BulkDeleteRequest {
+  dates: string[]; // DD/MM/YYYY format - row dates to delete
+}
+
+/**
+ * Bulk delete response
+ */
+export interface BulkDeleteResponse {
+  success: boolean;
+  deletedCount: number;
   errors?: string[];
 }
