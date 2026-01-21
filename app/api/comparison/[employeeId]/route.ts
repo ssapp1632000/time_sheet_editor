@@ -15,7 +15,7 @@ export async function GET(
   try {
     const { employeeId } = await params;
 
-    if (!isXlsxLoaded()) {
+    if (!(await isXlsxLoaded())) {
       return NextResponse.json(
         { error: "XLSX file not loaded. Please upload a file first." },
         { status: 400 }
@@ -23,7 +23,7 @@ export async function GET(
     }
 
     // Get XLSX data for this employee
-    const xlsxData = getEmployeeById(employeeId);
+    const xlsxData = await getEmployeeById(employeeId);
     if (!xlsxData) {
       return NextResponse.json(
         { error: "Employee not found in XLSX data" },
@@ -32,7 +32,7 @@ export async function GET(
     }
 
     // Get date range from XLSX
-    const dateRange = getDateRange();
+    const dateRange = await getDateRange();
 
     // Fetch MongoDB data
     let mongoAttendance: Awaited<ReturnType<typeof getAttendanceForUser>> = [];

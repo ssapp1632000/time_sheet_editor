@@ -15,8 +15,8 @@ export async function POST(
       );
     }
 
-    markEmployeeUpdated(employeeId);
-    const updatedEmployees = getUpdatedEmployees();
+    await markEmployeeUpdated(employeeId);
+    const updatedEmployees = await getUpdatedEmployees();
 
     return NextResponse.json({
       success: true,

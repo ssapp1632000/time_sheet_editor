@@ -8,7 +8,7 @@ import {
 import { getUsersCollection } from "@/lib/db/mongodb";
 
 export async function GET() {
-  if (!isXlsxLoaded()) {
+  if (!(await isXlsxLoaded())) {
     return NextResponse.json(
       { error: "XLSX file not loaded. Please upload a file first." },
       { status: 400 }
@@ -16,9 +16,9 @@ export async function GET() {
   }
 
   try {
-    const xlsxEmployees = getEmployeeList();
-    const dateRange = getDateRange();
-    const updatedEmployees = getUpdatedEmployees();
+    const xlsxEmployees = await getEmployeeList();
+    const dateRange = await getDateRange();
+    const updatedEmployees = await getUpdatedEmployees();
 
     // Get all employee IDs from XLSX
     const employeeIds = xlsxEmployees.map((e) => e.id);

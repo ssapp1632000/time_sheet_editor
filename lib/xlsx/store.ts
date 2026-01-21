@@ -1,165 +1,135 @@
-import fs from "fs";
-import path from "path";
 import type { XlsxStore, EmployeeXlsxData, DateRange } from "@/types/xlsx";
+import {
+  getXlsxImportDoc,
+  saveXlsxImportDoc,
+  addUpdatedEmployee,
+  deleteXlsxImportDoc,
+  type XlsxImportDocument,
+} from "@/lib/db/xlsx-store-db";
 
-// File path for persistent storage
-const STORE_FILE_PATH = path.join(process.cwd(), ".xlsx-store.json");
-
-// Serializable version of the store (Map and Set converted to arrays)
-interface SerializableStore {
-  employees: Array<[string, EmployeeXlsxData]>;
-  employeeList: Array<{ id: string; name: string }>;
-  dateRange: DateRange | null;
-  isLoaded: boolean;
-  updatedEmployees: string[];
-}
-
-// Module-level in-memory store (persists across requests in same process)
-let xlsxStore: XlsxStore = {
-  employees: new Map(),
-  employeeList: [],
-  dateRange: null,
-  isLoaded: false,
-  updatedEmployees: new Set(),
-};
-
-// Flag to track if we've tried loading from file
-let hasTriedFileLoad = false;
+// In-memory cache for the current request
+let cachedStore: XlsxStore | null = null;
 
 /**
- * Load store from file if it exists
+ * Convert MongoDB document to XlsxStore format
  */
-function loadFromFile(): void {
-  if (hasTriedFileLoad) return;
-  hasTriedFileLoad = true;
-
-  try {
-    if (fs.existsSync(STORE_FILE_PATH)) {
-      const data = fs.readFileSync(STORE_FILE_PATH, "utf-8");
-      const parsed: SerializableStore = JSON.parse(data);
-
-      xlsxStore = {
-        employees: new Map(parsed.employees),
-        employeeList: parsed.employeeList,
-        dateRange: parsed.dateRange,
-        isLoaded: parsed.isLoaded,
-        updatedEmployees: new Set(parsed.updatedEmployees || []),
-      };
-      console.log("XLSX store loaded from file");
-    }
-  } catch (error) {
-    console.error("Error loading XLSX store from file:", error);
-  }
-}
-
-/**
- * Save store to file
- */
-function saveToFile(): void {
-  try {
-    const serializable: SerializableStore = {
-      employees: Array.from(xlsxStore.employees.entries()),
-      employeeList: xlsxStore.employeeList,
-      dateRange: xlsxStore.dateRange,
-      isLoaded: xlsxStore.isLoaded,
-      updatedEmployees: Array.from(xlsxStore.updatedEmployees),
+function docToStore(doc: XlsxImportDocument | null): XlsxStore {
+  if (!doc) {
+    return {
+      employees: new Map(),
+      employeeList: [],
+      dateRange: null,
+      isLoaded: false,
+      updatedEmployees: new Set(),
     };
-
-    fs.writeFileSync(STORE_FILE_PATH, JSON.stringify(serializable), "utf-8");
-    console.log("XLSX store saved to file");
-  } catch (error) {
-    console.error("Error saving XLSX store to file:", error);
   }
+
+  return {
+    employees: new Map(doc.employees.map((e) => [e.employeeId, e])),
+    employeeList: doc.employeeList,
+    dateRange: doc.dateRange,
+    isLoaded: doc.isLoaded,
+    updatedEmployees: new Set(doc.updatedEmployees || []),
+  };
+}
+
+/**
+ * Load store from MongoDB (with caching)
+ */
+async function loadFromMongo(): Promise<XlsxStore> {
+  if (cachedStore) {
+    return cachedStore;
+  }
+
+  const doc = await getXlsxImportDoc();
+  cachedStore = docToStore(doc);
+  return cachedStore;
+}
+
+/**
+ * Invalidate cache
+ */
+function invalidateCache(): void {
+  cachedStore = null;
 }
 
 /**
  * Get the current XLSX store
  */
-export function getXlsxStore(): XlsxStore {
-  loadFromFile();
-  return xlsxStore;
+export async function getXlsxStore(): Promise<XlsxStore> {
+  return loadFromMongo();
 }
 
 /**
  * Set the XLSX store with new data
  */
-export function setXlsxStore(store: XlsxStore): void {
-  xlsxStore = store;
-  saveToFile();
+export async function setXlsxStore(store: XlsxStore): Promise<void> {
+  await saveXlsxImportDoc({
+    dateRange: store.dateRange,
+    employees: Array.from(store.employees.values()),
+    employeeList: store.employeeList,
+    updatedEmployees: Array.from(store.updatedEmployees),
+    isLoaded: store.isLoaded,
+  });
+  invalidateCache();
 }
 
 /**
  * Check if XLSX data has been loaded
  */
-export function isXlsxLoaded(): boolean {
-  loadFromFile();
-  return xlsxStore.isLoaded;
+export async function isXlsxLoaded(): Promise<boolean> {
+  const store = await loadFromMongo();
+  return store.isLoaded;
 }
 
 /**
  * Get employee data by ID
  */
-export function getEmployeeById(
+export async function getEmployeeById(
   employeeId: string
-): EmployeeXlsxData | undefined {
-  loadFromFile();
-  return xlsxStore.employees.get(employeeId);
+): Promise<EmployeeXlsxData | undefined> {
+  const store = await loadFromMongo();
+  return store.employees.get(employeeId);
 }
 
 /**
  * Get list of all employees
  */
-export function getEmployeeList(): Array<{ id: string; name: string }> {
-  loadFromFile();
-  return xlsxStore.employeeList;
+export async function getEmployeeList(): Promise<
+  Array<{ id: string; name: string }>
+> {
+  const store = await loadFromMongo();
+  return store.employeeList;
 }
 
 /**
  * Get the date range from the XLSX
  */
-export function getDateRange(): DateRange | null {
-  loadFromFile();
-  return xlsxStore.dateRange;
+export async function getDateRange(): Promise<DateRange | null> {
+  const store = await loadFromMongo();
+  return store.dateRange;
 }
 
 /**
  * Mark an employee as updated
  */
-export function markEmployeeUpdated(employeeId: string): void {
-  loadFromFile();
-  xlsxStore.updatedEmployees.add(employeeId);
-  saveToFile();
+export async function markEmployeeUpdated(employeeId: string): Promise<void> {
+  await addUpdatedEmployee(employeeId);
+  invalidateCache();
 }
 
 /**
  * Get set of updated employee IDs
  */
-export function getUpdatedEmployees(): Set<string> {
-  loadFromFile();
-  return new Set(xlsxStore.updatedEmployees);
+export async function getUpdatedEmployees(): Promise<Set<string>> {
+  const store = await loadFromMongo();
+  return new Set(store.updatedEmployees);
 }
 
 /**
  * Clear the XLSX store
  */
-export function clearXlsxStore(): void {
-  xlsxStore = {
-    employees: new Map(),
-    employeeList: [],
-    dateRange: null,
-    isLoaded: false,
-    updatedEmployees: new Set(),
-  };
-
-  // Delete the file
-  try {
-    if (fs.existsSync(STORE_FILE_PATH)) {
-      fs.unlinkSync(STORE_FILE_PATH);
-      console.log("XLSX store file deleted");
-    }
-  } catch (error) {
-    console.error("Error deleting XLSX store file:", error);
-  }
-
-  hasTriedFileLoad = false;
+export async function clearXlsxStore(): Promise<void> {
+  await deleteXlsxImportDoc();
+  invalidateCache();
 }

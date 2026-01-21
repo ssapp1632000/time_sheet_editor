@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
 
     const buffer = await file.arrayBuffer();
     const store = parseXlsxFile(buffer);
-    setXlsxStore(store);
+    await setXlsxStore(store);
 
     return NextResponse.json({
       success: true,
