@@ -55,7 +55,7 @@ export function EmployeeSelector({
   // Filter employees based on search
   const filteredEmployees = useMemo(() => {
     if (!search.trim()) {
-      return employees.slice(0, 50); // Show first 50 by default
+      return employees; // Show all employees
     }
     return fuse.search(search).map((result) => result.item).slice(0, 50);
   }, [search, fuse, employees]);

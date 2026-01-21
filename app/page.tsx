@@ -2,13 +2,14 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { FileSpreadsheet, Users } from "lucide-react";
+import { CheckCircle, FileSpreadsheet, SkipForward, Users } from "lucide-react";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { UploadZone } from "@/components/timesheet/upload-zone";
 import { EmployeeSelector } from "@/components/employee/employee-selector";
 import { ComparisonTable } from "@/components/timesheet/comparison-table";
 import { ComparisonSkeleton } from "@/components/timesheet/loading-skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useEmployees } from "@/lib/hooks/use-employees";
 import { useComparison } from "@/lib/hooks/use-comparison";
@@ -82,8 +83,8 @@ export default function Home() {
     refreshComparison();
   }, [refreshComparison]);
 
-  // Called after successful apply - mark as updated and auto-advance to next employee
-  const handleApplyComplete = useCallback(async () => {
+  // Mark employee as updated and advance to next unupdated employee
+  const markUpdatedAndAdvance = useCallback(async () => {
     if (!selectedEmployee) return;
 
     // Mark current employee as updated on server
@@ -107,6 +108,11 @@ export default function Home() {
       setSelectedEmployee(nextEmployee);
     }
   }, [selectedEmployee, employees, updatedEmployees, refreshEmployees]);
+
+  // Called after successful apply - mark as updated and auto-advance to next employee
+  const handleApplyComplete = useCallback(async () => {
+    await markUpdatedAndAdvance();
+  }, [markUpdatedAndAdvance]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -247,6 +253,22 @@ export default function Home() {
                             )}
                           </p>
                         </div>
+                        {updatedEmployees.has(selectedEmployee.id) ? (
+                          <Badge variant="default" className="bg-green-600 gap-1">
+                            <CheckCircle className="h-3 w-3" />
+                            Updated
+                          </Badge>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={markUpdatedAndAdvance}
+                            className="gap-2"
+                          >
+                            <SkipForward className="h-4 w-4" />
+                            Mark as Updated
+                          </Button>
+                        )}
                       </div>
                     </CardHeader>
                     <CardContent>
