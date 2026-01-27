@@ -64,8 +64,13 @@ export function compareTimeData(
 
   const days: DayComparison[] = [];
 
-  // Case 1: We have XLSX entries - use them as base
-  if (xlsxData && xlsxData.entries.length > 0) {
+  // Check if XLSX has any entries with actual time data
+  const hasXlsxTimeData = xlsxData?.entries.some(
+    (entry) => entry.in1 || entry.out2
+  );
+
+  // Case 1: We have XLSX entries with time data - use them as base
+  if (xlsxData && xlsxData.entries.length > 0 && hasXlsxTimeData) {
     for (const entry of xlsxData.entries) {
       const mongoRecord = mongoByDate.get(entry.date);
 
