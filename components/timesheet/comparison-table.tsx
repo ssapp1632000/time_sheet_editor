@@ -47,16 +47,18 @@ export function ComparisonTable({
   onUpdate,
   onApplyComplete,
 }: ComparisonTableProps) {
-  // Track actual values for each day (initialized with xlsx values as default)
+  // Track actual values for each day (initialized with xlsx values as default, fall back to mongodb)
   const [values, setValues] = useState<Map<string, DayValues>>(() => {
     const map = new Map();
     data.days.forEach((day) => {
-      // Default to xlsx values, fall back to mongodb if xlsx is empty
+      // Check if XLSX has any data for this day
+      const hasXlsxData = day.xlsx.in1 || day.xlsx.out2;
+      // Default to xlsx values when available, otherwise use mongodb values
       map.set(day.date, {
         checkInDate: day.xlsx.in1Date || day.mongo.firstCheckInDate || day.date,
-        checkInTime: day.xlsx.in1 || day.mongo.firstCheckIn || "",
+        checkInTime: hasXlsxData ? (day.xlsx.in1 || "") : (day.mongo.firstCheckIn || ""),
         checkOutDate: day.xlsx.out2Date || day.mongo.lastCheckOutDate || day.date,
-        checkOutTime: day.xlsx.out2 || day.mongo.lastCheckOut || "",
+        checkOutTime: hasXlsxData ? (day.xlsx.out2 || "") : (day.mongo.lastCheckOut || ""),
       });
     });
     return map;
@@ -467,6 +469,8 @@ function DayRow({
 }: DayRowProps) {
   const hasIssues = day.issues.length > 0;
   const hasMongoData = day.mongo.firstCheckIn || day.mongo.lastCheckOut;
+  // Check if this is a MongoDB-only day (no XLSX data)
+  const isMongoOnly = !day.xlsx.in1 && !day.xlsx.out2 && !day.xlsx.netWorkHours;
 
   // Calculate net hours with dates
   const calculatedNetHours = calculateNetHoursWithDates(
@@ -488,7 +492,8 @@ function DayRow({
           hasIssues && "border-yellow-400 dark:border-yellow-600",
           day.discrepancies.lowHours && "bg-yellow-50/50 dark:bg-yellow-950/20",
           !isSelected && "opacity-50",
-          isMarkedForDelete && "border-destructive bg-destructive/10"
+          isMarkedForDelete && "border-destructive bg-destructive/10",
+          isMongoOnly && "border-blue-400 dark:border-blue-600"
         )}
       >
         <CardHeader className="py-3 px-4">
@@ -505,6 +510,11 @@ function DayRow({
               </span>
             </CardTitle>
             <div className="flex items-center gap-2">
+              {isMongoOnly && (
+                <Badge variant="outline" className="border-blue-500 text-blue-600 dark:text-blue-400">
+                  MongoDB Only
+                </Badge>
+              )}
               {hasMongoData && (
                 <Button
                   variant={isMarkedForDelete ? "destructive" : "ghost"}

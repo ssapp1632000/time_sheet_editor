@@ -22,24 +22,27 @@ export async function GET(
       );
     }
 
-    // Get XLSX data for this employee
+    // Get XLSX data for this employee (may be undefined or have empty entries)
     const xlsxData = await getEmployeeById(employeeId);
-    if (!xlsxData) {
+
+    // Get date range from XLSX (needed for MongoDB query)
+    const dateRange = await getDateRange();
+
+    // Fetch user from MongoDB to verify they exist
+    const user = await findUserByEmployeeId(employeeId);
+
+    // If employee doesn't exist in XLSX AND doesn't exist in MongoDB, return 404
+    if (!xlsxData && !user) {
       return NextResponse.json(
-        { error: "Employee not found in XLSX data" },
+        { error: "Employee not found" },
         { status: 404 }
       );
     }
-
-    // Get date range from XLSX
-    const dateRange = await getDateRange();
 
     // Fetch MongoDB data
     let mongoAttendance: Awaited<ReturnType<typeof getAttendanceForUser>> = [];
 
     try {
-      const user = await findUserByEmployeeId(employeeId);
-
       if (user && dateRange) {
         const startDate = parseDateString(dateRange.start);
         const endDate = parseDateString(dateRange.end);
@@ -57,15 +60,18 @@ export async function GET(
       // Continue without MongoDB data - comparison will show xlsx only
     }
 
-    // Perform comparison
-    const comparison = compareTimeData(xlsxData, mongoAttendance);
+    // Perform comparison (now handles null/empty xlsxData)
+    const comparison = compareTimeData(xlsxData ?? null, mongoAttendance);
+
+    // Build employee info - prefer XLSX, fall back to MongoDB user
+    const employeeInfo = {
+      id: employeeId,
+      name: xlsxData?.employeeName ?? (user ? `${user.firstName} ${user.lastName}` : "Unknown"),
+      company: xlsxData?.company ?? "N/A",
+    };
 
     const response: ComparisonResponse = {
-      employee: {
-        id: employeeId,
-        name: xlsxData.employeeName,
-        company: xlsxData.company,
-      },
+      employee: employeeInfo,
       comparison,
     };
 

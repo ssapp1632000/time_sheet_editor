@@ -20,10 +20,39 @@ const LOW_HOURS_MIN = 3; // Minimum hours threshold
 const LOW_HOURS_MAX = 4; // Maximum hours threshold for warning
 
 /**
+ * Generate a DayComparison from MongoDB data only (no XLSX data)
+ */
+function createMongoOnlyDayComparison(record: AttendanceDayDocument): DayComparison {
+  const dateKey = format(new Date(record.day), "dd/MM/yyyy");
+  const dayName = format(new Date(record.day), "EEEE");
+
+  const mongoDay = extractMongoData(record);
+
+  const xlsxDay: XlsxDayData = {
+    in1: null,
+    in1Date: dateKey,
+    out2: null,
+    out2Date: dateKey,
+    netWorkHours: null,
+  };
+
+  return {
+    date: dateKey,
+    dayName,
+    xlsx: xlsxDay,
+    mongo: mongoDay,
+    discrepancies: { in1Missing: false, out2Missing: false, lowHours: false },
+    issues: [],
+    selection: { checkIn: "mongodb", checkOut: "mongodb" },
+  };
+}
+
+/**
  * Compare XLSX data with MongoDB attendance records
+ * If xlsxData is null or has no entries, generate comparison from MongoDB records only
  */
 export function compareTimeData(
-  xlsxData: EmployeeXlsxData,
+  xlsxData: EmployeeXlsxData | null,
   mongoAttendance: AttendanceDayDocument[]
 ): ComparisonData {
   // Create a map of MongoDB attendance by date string (dd/MM/yyyy)
@@ -35,28 +64,41 @@ export function compareTimeData(
 
   const days: DayComparison[] = [];
 
-  for (const entry of xlsxData.entries) {
-    const mongoRecord = mongoByDate.get(entry.date);
+  // Case 1: We have XLSX entries - use them as base
+  if (xlsxData && xlsxData.entries.length > 0) {
+    for (const entry of xlsxData.entries) {
+      const mongoRecord = mongoByDate.get(entry.date);
 
-    const xlsxDay = extractXlsxData(entry);
-    const mongoDay = extractMongoData(mongoRecord);
+      const xlsxDay = extractXlsxData(entry);
+      const mongoDay = extractMongoData(mongoRecord);
 
-    const discrepancies = detectDiscrepancies(xlsxDay, mongoDay);
-    const issues = generateIssues(discrepancies);
+      const discrepancies = detectDiscrepancies(xlsxDay, mongoDay);
+      const issues = generateIssues(discrepancies);
 
-    days.push({
-      date: entry.date,
-      dayName: entry.day,
-      xlsx: xlsxDay,
-      mongo: mongoDay,
-      discrepancies,
-      issues,
-      // Default selection: prefer XLSX values
-      selection: {
-        checkIn: "xlsx",
-        checkOut: "xlsx",
-      },
-    });
+      days.push({
+        date: entry.date,
+        dayName: entry.day,
+        xlsx: xlsxDay,
+        mongo: mongoDay,
+        discrepancies,
+        issues,
+        // Default selection: prefer XLSX values
+        selection: {
+          checkIn: "xlsx",
+          checkOut: "xlsx",
+        },
+      });
+    }
+  }
+  // Case 2: No XLSX entries - use MongoDB records as base
+  else {
+    const sortedRecords = [...mongoAttendance].sort(
+      (a, b) => new Date(a.day).getTime() - new Date(b.day).getTime()
+    );
+
+    for (const record of sortedRecords) {
+      days.push(createMongoOnlyDayComparison(record));
+    }
   }
 
   return {
