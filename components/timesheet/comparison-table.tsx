@@ -2,7 +2,14 @@
 
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { motion } from "framer-motion";
-import { AlertCircle, AlertTriangle, CheckCircle2, Clock, Loader2, Trash2 } from "lucide-react";
+import {
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Loader2,
+  Trash2,
+} from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,19 +36,19 @@ import type {
 // Calculate time difference in minutes between two HH:mm strings
 function getTimeDifferenceMinutes(
   time1: string | null,
-  time2: string | null
+  time2: string | null,
 ): number | null {
   if (!time1 || !time2) return null;
-  const [h1, m1] = time1.split(':').map(Number);
-  const [h2, m2] = time2.split(':').map(Number);
-  return Math.abs((h1 * 60 + m1) - (h2 * 60 + m2));
+  const [h1, m1] = time1.split(":").map(Number);
+  const [h2, m2] = time2.split(":").map(Number);
+  return Math.abs(h1 * 60 + m1 - (h2 * 60 + m2));
 }
 
 // Determine time diff status for cell highlighting
 // Returns "large" (red), "small" (green), or null (no comparison highlight)
 function getTimeDiffStatus(
   xlsxTime: string | null,
-  mongoTime: string | null
+  mongoTime: string | null,
 ): "large" | "small" | null {
   // Both times exist - compare them
   if (xlsxTime && mongoTime) {
@@ -90,9 +97,14 @@ export function ComparisonTable({
       // Default to xlsx values when available, otherwise use mongodb values
       map.set(day.date, {
         checkInDate: day.xlsx.in1Date || day.mongo.firstCheckInDate || day.date,
-        checkInTime: hasXlsxData ? (day.xlsx.in1 || "") : (day.mongo.firstCheckIn || ""),
-        checkOutDate: day.xlsx.out2Date || day.mongo.lastCheckOutDate || day.date,
-        checkOutTime: hasXlsxData ? (day.xlsx.out2 || "") : (day.mongo.lastCheckOut || ""),
+        checkInTime: hasXlsxData
+          ? day.xlsx.in1 || ""
+          : day.mongo.firstCheckIn || "",
+        checkOutDate:
+          day.xlsx.out2Date || day.mongo.lastCheckOutDate || day.date,
+        checkOutTime: hasXlsxData
+          ? day.xlsx.out2 || ""
+          : day.mongo.lastCheckOut || "",
       });
     });
     return map;
@@ -107,7 +119,9 @@ export function ComparisonTable({
   // Track suspect days
   const [suspectDays, setSuspectDays] = useState<Set<string>>(new Set());
   // Track which dates are currently loading
-  const [loadingSuspectDays, setLoadingSuspectDays] = useState<Set<string>>(new Set());
+  const [loadingSuspectDays, setLoadingSuspectDays] = useState<Set<string>>(
+    new Set(),
+  );
 
   // Fetch suspect days on mount
   useEffect(() => {
@@ -126,43 +140,46 @@ export function ComparisonTable({
   }, [employeeId]);
 
   // Toggle suspect day
-  const toggleSuspectDay = useCallback(async (date: string) => {
-    const isSuspect = suspectDays.has(date);
+  const toggleSuspectDay = useCallback(
+    async (date: string) => {
+      const isSuspect = suspectDays.has(date);
 
-    // Add to loading set
-    setLoadingSuspectDays((prev) => new Set(prev).add(date));
+      // Add to loading set
+      setLoadingSuspectDays((prev) => new Set(prev).add(date));
 
-    try {
-      const res = await fetch('/api/suspect-days', {
-        method: isSuspect ? 'DELETE' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employeeId, date }),
-      });
+      try {
+        const res = await fetch("/api/suspect-days", {
+          method: isSuspect ? "DELETE" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ employeeId, date }),
+        });
 
-      if (res.ok) {
-        setSuspectDays((prev) => {
+        if (res.ok) {
+          setSuspectDays((prev) => {
+            const newSet = new Set(prev);
+            if (isSuspect) {
+              newSet.delete(date);
+            } else {
+              newSet.add(date);
+            }
+            return newSet;
+          });
+          // Refresh employee list to update suspect counts
+          onRefreshEmployees?.();
+        }
+      } catch (error) {
+        console.error("Failed to toggle suspect day:", error);
+      } finally {
+        // Remove from loading set
+        setLoadingSuspectDays((prev) => {
           const newSet = new Set(prev);
-          if (isSuspect) {
-            newSet.delete(date);
-          } else {
-            newSet.add(date);
-          }
+          newSet.delete(date);
           return newSet;
         });
-        // Refresh employee list to update suspect counts
-        onRefreshEmployees?.();
       }
-    } catch (error) {
-      console.error("Failed to toggle suspect day:", error);
-    } finally {
-      // Remove from loading set
-      setLoadingSuspectDays((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(date);
-        return newSet;
-      });
-    }
-  }, [employeeId, suspectDays, onRefreshEmployees]);
+    },
+    [employeeId, suspectDays, onRefreshEmployees],
+  );
 
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -222,7 +239,7 @@ export function ComparisonTable({
         return newMap;
       });
     },
-    []
+    [],
   );
 
   // Get current values for a day
@@ -551,7 +568,7 @@ function DayRow({
     values.checkInDate,
     values.checkInTime,
     values.checkOutDate,
-    values.checkOutTime
+    values.checkOutTime,
   );
 
   return (
@@ -567,7 +584,7 @@ function DayRow({
           day.discrepancies.lowHours && "bg-yellow-50/50 dark:bg-yellow-950/20",
           !isSelected && "opacity-50",
           isMarkedForDelete && "border-destructive bg-destructive/10",
-          isMongoOnly && "border-blue-400 dark:border-blue-600"
+          isMongoOnly && "border-blue-400 dark:border-blue-600",
         )}
         onClick={onSelect}
       >
@@ -588,7 +605,10 @@ function DayRow({
             </CardTitle>
             <div className="flex items-center gap-2">
               {isMongoOnly && (
-                <Badge variant="outline" className="border-blue-500 text-blue-600 dark:text-blue-400">
+                <Badge
+                  variant="outline"
+                  className="border-blue-500 text-blue-600 dark:text-blue-400"
+                >
                   MongoDB Only
                 </Badge>
               )}
@@ -598,7 +618,11 @@ function DayRow({
                   size="icon"
                   className="h-8 w-8"
                   onClick={onToggleDelete}
-                  title={isMarkedForDelete ? "Unmark for deletion" : "Mark for deletion"}
+                  title={
+                    isMarkedForDelete
+                      ? "Unmark for deletion"
+                      : "Mark for deletion"
+                  }
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -652,7 +676,10 @@ function DayRow({
               onTimeChange={(time) => onValueChange("checkInTime", time)}
               hasDiscrepancy={day.discrepancies.in1Missing}
               label="Check In (1 IN)"
-              timeDiffStatus={getTimeDiffStatus(day.xlsx.in1, day.mongo.firstCheckIn) ?? undefined}
+              timeDiffStatus={
+                getTimeDiffStatus(day.xlsx.in1, day.mongo.firstCheckIn) ??
+                undefined
+              }
             />
 
             {/* Check-out cell */}
@@ -667,7 +694,10 @@ function DayRow({
               onTimeChange={(time) => onValueChange("checkOutTime", time)}
               hasDiscrepancy={day.discrepancies.out2Missing}
               label="Check Out (2 OUT)"
-              timeDiffStatus={getTimeDiffStatus(day.xlsx.out2, day.mongo.lastCheckOut) ?? undefined}
+              timeDiffStatus={
+                getTimeDiffStatus(day.xlsx.out2, day.mongo.lastCheckOut) ??
+                undefined
+              }
             />
           </div>
 
@@ -693,7 +723,10 @@ function DayRow({
           </div>
 
           {/* Suspect day checkbox */}
-          <div className="mt-3 pt-3 border-t flex items-center gap-2">
+          <div
+            className="-mx-4 px-4 -mb-4 pb-4 mt-3 pt-3 border-t flex items-center gap-2"
+            onClick={(e) => e.stopPropagation()}
+          >
             <Checkbox
               id={`suspect-${day.date}`}
               checked={isSuspect}
@@ -705,13 +738,15 @@ function DayRow({
               className={cn(
                 "text-sm cursor-pointer flex items-center gap-1",
                 isSuspect && "text-yellow-700 dark:text-yellow-400 font-medium",
-                isLoadingSuspect && "cursor-not-allowed opacity-50"
+                isLoadingSuspect && "cursor-not-allowed opacity-50",
               )}
             >
               {isLoadingSuspect ? (
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               ) : (
-                <AlertTriangle className={cn("h-4 w-4", isSuspect && "text-yellow-600")} />
+                <AlertTriangle
+                  className={cn("h-4 w-4", isSuspect && "text-yellow-600")}
+                />
               )}
               Mark as suspect day
             </label>
