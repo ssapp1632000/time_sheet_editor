@@ -40,6 +40,14 @@ export interface DateRange {
 }
 
 /**
+ * Suspect day marker - stored in XLSX persistence
+ */
+export interface SuspectDay {
+  employeeId: string;
+  date: string; // DD/MM/YYYY
+}
+
+/**
  * In-memory store for parsed XLSX data
  */
 export interface XlsxStore {
@@ -48,4 +56,5 @@ export interface XlsxStore {
   dateRange: DateRange | null;
   isLoaded: boolean;
   updatedEmployees: Set<string>;
+  suspectDays: SuspectDay[];
 }

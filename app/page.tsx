@@ -49,6 +49,7 @@ export default function Home() {
     totalInXlsx,
     filteredCount,
     updatedEmployees,
+    suspectDaysCounts,
     isLoading: isLoadingEmployees,
     error: employeesError,
     refresh: refreshEmployees,
@@ -229,6 +230,7 @@ export default function Home() {
                       onSelect={handleEmployeeSelect}
                       disabled={isLoadingEmployees}
                       updatedEmployees={updatedEmployees}
+                      suspectDaysCounts={suspectDaysCounts}
                     />
                   )}
                 </CardContent>
@@ -295,6 +297,7 @@ export default function Home() {
                           employeeId={selectedEmployee.id}
                           onUpdate={handleUpdate}
                           onApplyComplete={handleApplyComplete}
+                          onRefreshEmployees={refreshEmployees}
                         />
                       ) : null}
                     </CardContent>

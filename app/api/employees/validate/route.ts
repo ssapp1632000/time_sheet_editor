@@ -4,6 +4,7 @@ import {
   isXlsxLoaded,
   getDateRange,
   getUpdatedEmployees,
+  getSuspectDaysCounts,
 } from "@/lib/xlsx/store";
 import { getUsersCollection } from "@/lib/db/mongodb";
 
@@ -19,6 +20,7 @@ export async function GET() {
     const xlsxEmployees = await getEmployeeList();
     const dateRange = await getDateRange();
     const updatedEmployees = await getUpdatedEmployees();
+    const suspectDaysCounts = await getSuspectDaysCounts();
 
     // Get all employee IDs from XLSX
     const employeeIds = xlsxEmployees.map((e) => e.id);
@@ -46,6 +48,7 @@ export async function GET() {
       totalInXlsx: xlsxEmployees.length,
       filteredCount,
       updatedEmployees: Array.from(updatedEmployees),
+      suspectDaysCounts,
     });
   } catch (error) {
     console.error("Error validating employees:", error);

@@ -3,9 +3,10 @@
 import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Fuse from "fuse.js";
-import { Check, CheckCircle, ChevronsUpDown, User } from "lucide-react";
+import { Check, CheckCircle, ChevronsUpDown, User, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Command,
   CommandEmpty,
@@ -31,6 +32,7 @@ interface EmployeeSelectorProps {
   onSelect: (employee: Employee) => void;
   disabled?: boolean;
   updatedEmployees?: Set<string>;
+  suspectDaysCounts?: Record<string, number>;
 }
 
 export function EmployeeSelector({
@@ -39,6 +41,7 @@ export function EmployeeSelector({
   onSelect,
   disabled = false,
   updatedEmployees = new Set(),
+  suspectDaysCounts = {},
 }: EmployeeSelectorProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -112,7 +115,13 @@ export function EmployeeSelector({
                       }}
                       className={cn(
                         "cursor-pointer",
+                        // Yellow: updated AND has suspect days
                         updatedEmployees.has(employee.id) &&
+                          (suspectDaysCounts[employee.id] ?? 0) > 0 &&
+                          "bg-yellow-100 dark:bg-yellow-900/30",
+                        // Green: updated but NO suspect days
+                        updatedEmployees.has(employee.id) &&
+                          (suspectDaysCounts[employee.id] ?? 0) === 0 &&
                           "bg-green-100 dark:bg-green-900/30"
                       )}
                     >
@@ -128,9 +137,19 @@ export function EmployeeSelector({
                         {employee.id}
                       </span>
                       <span className="truncate flex-1">{employee.name}</span>
-                      {updatedEmployees.has(employee.id) && (
-                        <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 ml-2" />
-                      )}
+                      {/* Badge for suspect days (only for updated employees) */}
+                      {updatedEmployees.has(employee.id) &&
+                        (suspectDaysCounts[employee.id] ?? 0) > 0 && (
+                          <Badge variant="warning" className="ml-2 text-xs">
+                            <AlertTriangle className="h-3 w-3 mr-1" />
+                            {suspectDaysCounts[employee.id]} suspect
+                          </Badge>
+                        )}
+                      {/* Checkmark for updated employees without suspect days */}
+                      {updatedEmployees.has(employee.id) &&
+                        (suspectDaysCounts[employee.id] ?? 0) === 0 && (
+                          <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 ml-2" />
+                        )}
                     </CommandItem>
                   </motion.div>
                 ))}

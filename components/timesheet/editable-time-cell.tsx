@@ -23,6 +23,8 @@ interface EditableTimeCellProps {
   onTimeChange: (time: string) => void;
   hasDiscrepancy?: boolean;
   label: string;
+  // Time difference status: "large" (>20min), "small" (<=20min), or null (can't compare)
+  timeDiffStatus?: "large" | "small" | null;
 }
 
 // Parse DD/MM/YYYY to Date object
@@ -50,6 +52,7 @@ export function EditableTimeCell({
   onTimeChange,
   hasDiscrepancy = false,
   label,
+  timeDiffStatus,
 }: EditableTimeCellProps) {
   const [inputValue, setInputValue] = useState(time);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
@@ -144,11 +147,17 @@ export function EditableTimeCell({
     <div
       className={cn(
         "p-3 rounded-lg border transition-all",
-        hasDiscrepancy &&
+        // Time difference indicators take priority
+        timeDiffStatus === "large" && "bg-red-100 dark:bg-red-900/30 border-red-400 dark:border-red-600",
+        timeDiffStatus === "small" && "bg-green-100 dark:bg-green-900/30 border-green-400 dark:border-green-600",
+        // Only show amber if no timeDiffStatus and there's a discrepancy
+        !timeDiffStatus &&
+          hasDiscrepancy &&
           !hasXlsx &&
           hasMongo &&
           "border-amber-300 bg-amber-50/50 dark:bg-amber-950/20",
-        !hasDiscrepancy && "border-border"
+        // Default border when nothing else applies
+        !timeDiffStatus && !hasDiscrepancy && "border-border"
       )}
     >
       {/* Label */}

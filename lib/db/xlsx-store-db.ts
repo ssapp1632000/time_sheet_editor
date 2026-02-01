@@ -1,5 +1,5 @@
 import { MongoClient, Db, Collection, ObjectId } from "mongodb";
-import type { EmployeeXlsxData, DateRange, TimeEntry } from "@/types/xlsx";
+import type { EmployeeXlsxData, DateRange, TimeEntry, SuspectDay } from "@/types/xlsx";
 
 const MONGODB_URI = process.env.MONGODB_URI!;
 
@@ -30,6 +30,7 @@ export interface XlsxImportDocument {
   }>;
   employeeList: Array<{ id: string; name: string }>;
   updatedEmployees: string[];
+  suspectDays: SuspectDay[];
   isLoaded: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -104,6 +105,42 @@ export async function addUpdatedEmployee(employeeId: string): Promise<void> {
       $set: { updatedAt: new Date() },
     }
   );
+}
+
+/**
+ * Add a suspect day
+ */
+export async function addSuspectDay(employeeId: string, date: string): Promise<void> {
+  const collection = await getXlsxImportCollection();
+  await collection.updateOne(
+    {},
+    {
+      $addToSet: { suspectDays: { employeeId, date } },
+      $set: { updatedAt: new Date() },
+    }
+  );
+}
+
+/**
+ * Remove a suspect day
+ */
+export async function removeSuspectDay(employeeId: string, date: string): Promise<void> {
+  const collection = await getXlsxImportCollection();
+  await collection.updateOne(
+    {},
+    {
+      $pull: { suspectDays: { employeeId, date } },
+      $set: { updatedAt: new Date() },
+    }
+  );
+}
+
+/**
+ * Get all suspect days
+ */
+export async function getSuspectDays(): Promise<SuspectDay[]> {
+  const doc = await getXlsxImportDoc();
+  return doc?.suspectDays ?? [];
 }
 
 /**

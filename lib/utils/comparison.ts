@@ -210,10 +210,13 @@ function detectDiscrepancies(
   mongo: MongoDayData
 ): Discrepancies {
   // Check for missing 1 IN in xlsx but present in mongo
-  const in1Missing = !xlsx.in1 && !!mongo.firstCheckIn;
+  // Only flag as issue if MongoDB time is 00:00 (indicates potential problem)
+  // Valid MongoDB times (not 00:00) are acceptable when XLSX is missing
+  const in1Missing = !xlsx.in1 && !!mongo.firstCheckIn && mongo.firstCheckIn === "00:00";
 
   // Check for missing 2 OUT in xlsx but present in mongo
-  const out2Missing = !xlsx.out2 && !!mongo.lastCheckOut;
+  // Only flag as issue if MongoDB time is 00:00 (indicates potential problem)
+  const out2Missing = !xlsx.out2 && !!mongo.lastCheckOut && mongo.lastCheckOut === "00:00";
 
   // Check for low work hours (between 3-4 hours)
   let lowHours = false;
@@ -236,11 +239,11 @@ function generateIssues(discrepancies: Discrepancies): string[] {
   const issues: string[] = [];
 
   if (discrepancies.in1Missing) {
-    issues.push("Missing 1 IN - MongoDB has check-in record");
+    issues.push("Check-in time is 00:00 - may need correction");
   }
 
   if (discrepancies.out2Missing) {
-    issues.push("Missing 2 OUT - MongoDB has check-out record");
+    issues.push("Check-out time is 00:00 - may need correction");
   }
 
   if (discrepancies.lowHours) {

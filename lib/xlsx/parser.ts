@@ -67,6 +67,7 @@ export function parseXlsxFile(buffer: ArrayBuffer): XlsxStore {
     dateRange,
     isLoaded: true,
     updatedEmployees: new Set(),
+    suspectDays: [],
   };
 }
 

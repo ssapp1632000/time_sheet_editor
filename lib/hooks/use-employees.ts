@@ -13,6 +13,7 @@ interface ValidatedEmployeesResponse {
   totalInXlsx: number;
   filteredCount: number;
   updatedEmployees: string[];
+  suspectDaysCounts: Record<string, number>;
 }
 
 const fetcher = async (url: string): Promise<ValidatedEmployeesResponse> => {
@@ -42,6 +43,7 @@ export function useEmployees(enabled: boolean = true) {
     totalInXlsx: data?.totalInXlsx ?? 0,
     filteredCount: data?.filteredCount ?? 0,
     updatedEmployees: new Set(data?.updatedEmployees ?? []),
+    suspectDaysCounts: data?.suspectDaysCounts ?? {},
     isLoading,
     error: error?.message,
     refresh: mutate,

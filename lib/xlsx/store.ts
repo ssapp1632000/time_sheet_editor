@@ -1,9 +1,12 @@
-import type { XlsxStore, EmployeeXlsxData, DateRange } from "@/types/xlsx";
+import type { XlsxStore, EmployeeXlsxData, DateRange, SuspectDay } from "@/types/xlsx";
 import {
   getXlsxImportDoc,
   saveXlsxImportDoc,
   addUpdatedEmployee,
   deleteXlsxImportDoc,
+  addSuspectDay as dbAddSuspectDay,
+  removeSuspectDay as dbRemoveSuspectDay,
+  getSuspectDays as dbGetSuspectDays,
   type XlsxImportDocument,
 } from "@/lib/db/xlsx-store-db";
 
@@ -21,6 +24,7 @@ function docToStore(doc: XlsxImportDocument | null): XlsxStore {
       dateRange: null,
       isLoaded: false,
       updatedEmployees: new Set(),
+      suspectDays: [],
     };
   }
 
@@ -30,6 +34,7 @@ function docToStore(doc: XlsxImportDocument | null): XlsxStore {
     dateRange: doc.dateRange,
     isLoaded: doc.isLoaded,
     updatedEmployees: new Set(doc.updatedEmployees || []),
+    suspectDays: doc.suspectDays || [],
   };
 }
 
@@ -69,6 +74,7 @@ export async function setXlsxStore(store: XlsxStore): Promise<void> {
     employees: Array.from(store.employees.values()),
     employeeList: store.employeeList,
     updatedEmployees: Array.from(store.updatedEmployees),
+    suspectDays: store.suspectDays,
     isLoaded: store.isLoaded,
   });
   invalidateCache();
@@ -124,6 +130,51 @@ export async function markEmployeeUpdated(employeeId: string): Promise<void> {
 export async function getUpdatedEmployees(): Promise<Set<string>> {
   const store = await loadFromMongo();
   return new Set(store.updatedEmployees);
+}
+
+/**
+ * Mark a day as suspect
+ */
+export async function markDayAsSuspect(employeeId: string, date: string): Promise<void> {
+  await dbAddSuspectDay(employeeId, date);
+  invalidateCache();
+}
+
+/**
+ * Unmark a day as suspect
+ */
+export async function unmarkDayAsSuspect(employeeId: string, date: string): Promise<void> {
+  await dbRemoveSuspectDay(employeeId, date);
+  invalidateCache();
+}
+
+/**
+ * Get all suspect days
+ */
+export async function getSuspectDays(): Promise<SuspectDay[]> {
+  return dbGetSuspectDays();
+}
+
+/**
+ * Get suspect days for a specific employee
+ */
+export async function getSuspectDaysForEmployee(employeeId: string): Promise<string[]> {
+  const suspectDays = await dbGetSuspectDays();
+  return suspectDays
+    .filter((sd) => sd.employeeId === employeeId)
+    .map((sd) => sd.date);
+}
+
+/**
+ * Get count of suspect days per employee
+ */
+export async function getSuspectDaysCounts(): Promise<Record<string, number>> {
+  const suspectDays = await dbGetSuspectDays();
+  const counts: Record<string, number> = {};
+  for (const sd of suspectDays) {
+    counts[sd.employeeId] = (counts[sd.employeeId] || 0) + 1;
+  }
+  return counts;
 }
 
 /**

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { motion } from "framer-motion";
-import { AlertCircle, CheckCircle2, Clock, Trash2 } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle2, Clock, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,11 +26,44 @@ import type {
   BulkDeleteRequest,
 } from "@/types/comparison";
 
+// Calculate time difference in minutes between two HH:mm strings
+function getTimeDifferenceMinutes(
+  time1: string | null,
+  time2: string | null
+): number | null {
+  if (!time1 || !time2) return null;
+  const [h1, m1] = time1.split(':').map(Number);
+  const [h2, m2] = time2.split(':').map(Number);
+  return Math.abs((h1 * 60 + m1) - (h2 * 60 + m2));
+}
+
+// Determine time diff status for cell highlighting
+// Returns "large" (red), "small" (green), or null (no comparison highlight)
+function getTimeDiffStatus(
+  xlsxTime: string | null,
+  mongoTime: string | null
+): "large" | "small" | null {
+  // Both times exist - compare them
+  if (xlsxTime && mongoTime) {
+    const diff = getTimeDifferenceMinutes(xlsxTime, mongoTime);
+    if (diff === null) return null;
+    return diff > 20 ? "large" : "small";
+  }
+
+  // MongoDB-only: valid time (not 00:00) = green, otherwise null (amber will show)
+  if (!xlsxTime && mongoTime && mongoTime !== "00:00") {
+    return "small";
+  }
+
+  return null;
+}
+
 interface ComparisonTableProps {
   data: ComparisonData;
   employeeId: string;
   onUpdate: () => void;
   onApplyComplete?: () => void;
+  onRefreshEmployees?: () => void;
 }
 
 // Track the actual values for each day (now with dates)
@@ -46,6 +79,7 @@ export function ComparisonTable({
   employeeId,
   onUpdate,
   onApplyComplete,
+  onRefreshEmployees,
 }: ComparisonTableProps) {
   // Track actual values for each day (initialized with xlsx values as default, fall back to mongodb)
   const [values, setValues] = useState<Map<string, DayValues>>(() => {
@@ -71,6 +105,54 @@ export function ComparisonTable({
 
   // Track days marked for deletion
   const [daysToDelete, setDaysToDelete] = useState<Set<string>>(new Set());
+
+  // Track suspect days
+  const [suspectDays, setSuspectDays] = useState<Set<string>>(new Set());
+
+  // Fetch suspect days on mount
+  useEffect(() => {
+    const fetchSuspectDays = async () => {
+      try {
+        const res = await fetch(`/api/suspect-days?employeeId=${employeeId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setSuspectDays(new Set(data.dates || []));
+        }
+      } catch (error) {
+        console.error("Failed to fetch suspect days:", error);
+      }
+    };
+    fetchSuspectDays();
+  }, [employeeId]);
+
+  // Toggle suspect day
+  const toggleSuspectDay = useCallback(async (date: string) => {
+    const isSuspect = suspectDays.has(date);
+
+    try {
+      const res = await fetch('/api/suspect-days', {
+        method: isSuspect ? 'DELETE' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeId, date }),
+      });
+
+      if (res.ok) {
+        setSuspectDays((prev) => {
+          const newSet = new Set(prev);
+          if (isSuspect) {
+            newSet.delete(date);
+          } else {
+            newSet.add(date);
+          }
+          return newSet;
+        });
+        // Refresh employee list to update suspect counts
+        onRefreshEmployees?.();
+      }
+    } catch (error) {
+      console.error("Failed to toggle suspect day:", error);
+    }
+  }, [employeeId, suspectDays, onRefreshEmployees]);
 
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -315,6 +397,8 @@ export function ComparisonTable({
               onToggleSelect={() => toggleDaySelection(day.date)}
               isMarkedForDelete={daysToDelete.has(day.date)}
               onToggleDelete={() => toggleDeleteMark(day.date)}
+              isSuspect={suspectDays.has(day.date)}
+              onToggleSuspect={() => toggleSuspectDay(day.date)}
             />
           ))}
         </div>
@@ -455,6 +539,8 @@ interface DayRowProps {
   onToggleSelect: () => void;
   isMarkedForDelete: boolean;
   onToggleDelete: () => void;
+  isSuspect: boolean;
+  onToggleSuspect: () => void;
 }
 
 function DayRow({
@@ -466,6 +552,8 @@ function DayRow({
   onToggleSelect,
   isMarkedForDelete,
   onToggleDelete,
+  isSuspect,
+  onToggleSuspect,
 }: DayRowProps) {
   const hasIssues = day.issues.length > 0;
   const hasMongoData = day.mongo.firstCheckIn || day.mongo.lastCheckOut;
@@ -575,6 +663,7 @@ function DayRow({
               onTimeChange={(time) => onValueChange("checkInTime", time)}
               hasDiscrepancy={day.discrepancies.in1Missing}
               label="Check In (1 IN)"
+              timeDiffStatus={getTimeDiffStatus(day.xlsx.in1, day.mongo.firstCheckIn) ?? undefined}
             />
 
             {/* Check-out cell */}
@@ -589,6 +678,7 @@ function DayRow({
               onTimeChange={(time) => onValueChange("checkOutTime", time)}
               hasDiscrepancy={day.discrepancies.out2Missing}
               label="Check Out (2 OUT)"
+              timeDiffStatus={getTimeDiffStatus(day.xlsx.out2, day.mongo.lastCheckOut) ?? undefined}
             />
           </div>
 
@@ -611,6 +701,25 @@ function DayRow({
                 MongoDB: {day.mongo.totalHours}
               </span>
             )}
+          </div>
+
+          {/* Suspect day checkbox */}
+          <div className="mt-3 pt-3 border-t flex items-center gap-2">
+            <Checkbox
+              id={`suspect-${day.date}`}
+              checked={isSuspect}
+              onCheckedChange={onToggleSuspect}
+            />
+            <label
+              htmlFor={`suspect-${day.date}`}
+              className={cn(
+                "text-sm cursor-pointer flex items-center gap-1",
+                isSuspect && "text-yellow-700 dark:text-yellow-400 font-medium"
+              )}
+            >
+              <AlertTriangle className={cn("h-4 w-4", isSuspect && "text-yellow-600")} />
+              Mark as suspect day
+            </label>
           </div>
         </CardContent>
       </Card>
