@@ -28,6 +28,7 @@ export interface UserDocument {
   isActive: boolean;
   onLeave: boolean;
   geofenceRequired: boolean;
+  nightWork?: boolean;
   dateOfJoining?: Date;
   dateOfBirth?: Date;
   address?: string;

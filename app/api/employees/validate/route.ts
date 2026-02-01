@@ -25,16 +25,19 @@ export async function GET() {
     // Get all employee IDs from XLSX
     const employeeIds = xlsxEmployees.map((e) => e.id);
 
-    // Batch query MongoDB to find which employees exist
+    // Batch query MongoDB to find which employees exist AND don't have nightWork flag
     const usersCollection = await getUsersCollection();
     const existingUsers = await usersCollection
-      .find({ employeeId: { $in: employeeIds } })
+      .find({
+        employeeId: { $in: employeeIds },
+        nightWork: { $ne: true },
+      })
       .project({ employeeId: 1 })
       .toArray();
 
     const existingIds = new Set(existingUsers.map((u) => u.employeeId));
 
-    // Filter to only employees that exist in MongoDB and sort alphabetically by name
+    // Filter to employees that exist in MongoDB and don't have nightWork flag
     const validEmployees = xlsxEmployees
       .filter((e) => existingIds.has(e.id))
       .sort((a, b) => a.name.localeCompare(b.name));

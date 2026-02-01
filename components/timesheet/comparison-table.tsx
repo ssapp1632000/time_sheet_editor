@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { motion } from "framer-motion";
-import { AlertCircle, AlertTriangle, CheckCircle2, Clock, Trash2 } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle2, Clock, Loader2, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -98,16 +98,16 @@ export function ComparisonTable({
     return map;
   });
 
-  // Track selected days (all selected by default)
-  const [selectedDays, setSelectedDays] = useState<Set<string>>(() => {
-    return new Set(data.days.map((day) => day.date));
-  });
+  // Track selected days (none selected by default)
+  const [selectedDays, setSelectedDays] = useState<Set<string>>(new Set());
 
   // Track days marked for deletion
   const [daysToDelete, setDaysToDelete] = useState<Set<string>>(new Set());
 
   // Track suspect days
   const [suspectDays, setSuspectDays] = useState<Set<string>>(new Set());
+  // Track which dates are currently loading
+  const [loadingSuspectDays, setLoadingSuspectDays] = useState<Set<string>>(new Set());
 
   // Fetch suspect days on mount
   useEffect(() => {
@@ -128,6 +128,9 @@ export function ComparisonTable({
   // Toggle suspect day
   const toggleSuspectDay = useCallback(async (date: string) => {
     const isSuspect = suspectDays.has(date);
+
+    // Add to loading set
+    setLoadingSuspectDays((prev) => new Set(prev).add(date));
 
     try {
       const res = await fetch('/api/suspect-days', {
@@ -151,6 +154,13 @@ export function ComparisonTable({
       }
     } catch (error) {
       console.error("Failed to toggle suspect day:", error);
+    } finally {
+      // Remove from loading set
+      setLoadingSuspectDays((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(date);
+        return newSet;
+      });
     }
   }, [employeeId, suspectDays, onRefreshEmployees]);
 
@@ -174,6 +184,16 @@ export function ComparisonTable({
     });
   }, []);
 
+  // Select a day (only add, never remove)
+  const selectDay = useCallback((date: string) => {
+    setSelectedDays((prev) => {
+      if (prev.has(date)) return prev;
+      const newSet = new Set(prev);
+      newSet.add(date);
+      return newSet;
+    });
+  }, []);
+
   // Toggle delete mark for a day
   const toggleDeleteMark = useCallback((date: string) => {
     setDaysToDelete((prev) => {
@@ -186,26 +206,6 @@ export function ComparisonTable({
       return newSet;
     });
   }, []);
-
-  // Select all days
-  const selectAllDays = useCallback(() => {
-    setSelectedDays(new Set(data.days.map((day) => day.date)));
-  }, [data.days]);
-
-  // Deselect all days
-  const deselectAllDays = useCallback(() => {
-    setSelectedDays(new Set());
-  }, []);
-
-  // Check if all days are selected
-  const allSelected = useMemo(() => {
-    return selectedDays.size === data.days.length;
-  }, [selectedDays.size, data.days.length]);
-
-  // Check if some days are selected
-  const someSelected = useMemo(() => {
-    return selectedDays.size > 0 && selectedDays.size < data.days.length;
-  }, [selectedDays.size, data.days.length]);
 
   // Update value for a specific day and field
   const updateValue = useCallback(
@@ -334,26 +334,6 @@ export function ComparisonTable({
       {/* Summary header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="select-all"
-              checked={allSelected}
-              onCheckedChange={(checked) => {
-                if (checked) {
-                  selectAllDays();
-                } else {
-                  deselectAllDays();
-                }
-              }}
-              className={someSelected ? "opacity-50" : ""}
-            />
-            <label
-              htmlFor="select-all"
-              className="text-sm font-medium cursor-pointer"
-            >
-              Select All
-            </label>
-          </div>
           <Badge variant={data.totalIssues > 0 ? "warning" : "success"}>
             {data.totalIssues > 0
               ? `${data.totalIssues} issues found`
@@ -394,10 +374,12 @@ export function ComparisonTable({
                 updateValue(day.date, field, value)
               }
               isSelected={selectedDays.has(day.date)}
+              onSelect={() => selectDay(day.date)}
               onToggleSelect={() => toggleDaySelection(day.date)}
               isMarkedForDelete={daysToDelete.has(day.date)}
               onToggleDelete={() => toggleDeleteMark(day.date)}
               isSuspect={suspectDays.has(day.date)}
+              isLoadingSuspect={loadingSuspectDays.has(day.date)}
               onToggleSuspect={() => toggleSuspectDay(day.date)}
             />
           ))}
@@ -536,10 +518,12 @@ interface DayRowProps {
   values: DayValues;
   onValueChange: (field: keyof DayValues, value: string) => void;
   isSelected: boolean;
+  onSelect: () => void;
   onToggleSelect: () => void;
   isMarkedForDelete: boolean;
   onToggleDelete: () => void;
   isSuspect: boolean;
+  isLoadingSuspect: boolean;
   onToggleSuspect: () => void;
 }
 
@@ -549,10 +533,12 @@ function DayRow({
   values,
   onValueChange,
   isSelected,
+  onSelect,
   onToggleSelect,
   isMarkedForDelete,
   onToggleDelete,
   isSuspect,
+  isLoadingSuspect,
   onToggleSuspect,
 }: DayRowProps) {
   const hasIssues = day.issues.length > 0;
@@ -576,22 +562,25 @@ function DayRow({
     >
       <Card
         className={cn(
-          "transition-all",
+          "transition-all cursor-pointer",
           hasIssues && "border-yellow-400 dark:border-yellow-600",
           day.discrepancies.lowHours && "bg-yellow-50/50 dark:bg-yellow-950/20",
           !isSelected && "opacity-50",
           isMarkedForDelete && "border-destructive bg-destructive/10",
           isMongoOnly && "border-blue-400 dark:border-blue-600"
         )}
+        onClick={onSelect}
       >
         <CardHeader className="py-3 px-4">
           <div className="flex items-center justify-between">
             <CardTitle className="text-base flex items-center gap-3">
-              <Checkbox
-                checked={isSelected}
-                onCheckedChange={onToggleSelect}
-                className="mr-1"
-              />
+              <div onClick={(e) => e.stopPropagation()}>
+                <Checkbox
+                  checked={isSelected}
+                  onCheckedChange={onToggleSelect}
+                  className="mr-1"
+                />
+              </div>
               <span className="font-mono text-sm">{day.date}</span>
               <span className="text-muted-foreground font-normal">
                 {day.dayName}
@@ -709,15 +698,21 @@ function DayRow({
               id={`suspect-${day.date}`}
               checked={isSuspect}
               onCheckedChange={onToggleSuspect}
+              disabled={isLoadingSuspect}
             />
             <label
               htmlFor={`suspect-${day.date}`}
               className={cn(
                 "text-sm cursor-pointer flex items-center gap-1",
-                isSuspect && "text-yellow-700 dark:text-yellow-400 font-medium"
+                isSuspect && "text-yellow-700 dark:text-yellow-400 font-medium",
+                isLoadingSuspect && "cursor-not-allowed opacity-50"
               )}
             >
-              <AlertTriangle className={cn("h-4 w-4", isSuspect && "text-yellow-600")} />
+              {isLoadingSuspect ? (
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              ) : (
+                <AlertTriangle className={cn("h-4 w-4", isSuspect && "text-yellow-600")} />
+              )}
               Mark as suspect day
             </label>
           </div>
