@@ -25,7 +25,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { EditableTimeCell } from "./editable-time-cell";
-import { calculateNetHoursWithDates } from "@/lib/utils/time";
+import { calculateNetHoursWithDates, detectCheckoutDate } from "@/lib/utils/time";
 import type {
   ComparisonData,
   DayComparison,
@@ -235,7 +235,24 @@ export function ComparisonTable({
           checkOutDate: date,
           checkOutTime: "",
         };
-        newMap.set(date, { ...current, [field]: value });
+
+        // Create updated values
+        const updated = { ...current, [field]: value };
+
+        // Auto-detect checkout date when checkout time changes
+        // If checkout time <= check-in time, it's an overnight shift
+        if (field === "checkOutTime" && value) {
+          const checkInTime = updated.checkInTime;
+          if (checkInTime) {
+            updated.checkOutDate = detectCheckoutDate(
+              updated.checkInDate,
+              checkInTime,
+              value
+            );
+          }
+        }
+
+        newMap.set(date, updated);
         return newMap;
       });
     },
