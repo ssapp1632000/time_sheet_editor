@@ -24,6 +24,7 @@ import {
 interface Employee {
   id: string;
   name: string;
+  hasXlsx: boolean;
 }
 
 interface EmployeeSelectorProps {
@@ -137,6 +138,12 @@ export function EmployeeSelector({
                         {employee.id}
                       </span>
                       <span className="truncate flex-1">{employee.name}</span>
+                      {/* Badge for MongoDB-only employees (no XLSX data) */}
+                      {!employee.hasXlsx && (
+                        <Badge variant="outline" className="ml-2 text-xs text-orange-600 border-orange-400">
+                          DB only
+                        </Badge>
+                      )}
                       {/* Badge for suspect days (only for updated employees) */}
                       {updatedEmployees.has(employee.id) &&
                         (suspectDaysCounts[employee.id] ?? 0) > 0 && (

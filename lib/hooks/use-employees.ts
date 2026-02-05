@@ -4,6 +4,7 @@ import type { DateRange } from "@/types/xlsx";
 interface Employee {
   id: string;
   name: string;
+  hasXlsx: boolean;
 }
 
 interface ValidatedEmployeesResponse {
@@ -11,6 +12,8 @@ interface ValidatedEmployeesResponse {
   dateRange: DateRange | null;
   count: number;
   totalInXlsx: number;
+  totalInMongo: number;
+  mongoOnlyCount: number;
   filteredCount: number;
   updatedEmployees: string[];
   suspectDaysCounts: Record<string, number>;
@@ -41,6 +44,8 @@ export function useEmployees(enabled: boolean = true) {
     dateRange: data?.dateRange ?? null,
     count: data?.count ?? 0,
     totalInXlsx: data?.totalInXlsx ?? 0,
+    totalInMongo: data?.totalInMongo ?? 0,
+    mongoOnlyCount: data?.mongoOnlyCount ?? 0,
     filteredCount: data?.filteredCount ?? 0,
     updatedEmployees: new Set(data?.updatedEmployees ?? []),
     suspectDaysCounts: data?.suspectDaysCounts ?? {},

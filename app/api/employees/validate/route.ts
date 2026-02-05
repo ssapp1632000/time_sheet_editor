@@ -22,33 +22,50 @@ export async function GET() {
     const updatedEmployees = await getUpdatedEmployees();
     const suspectDaysCounts = await getSuspectDaysCounts();
 
-    // Get all employee IDs from XLSX
-    const employeeIds = xlsxEmployees.map((e) => e.id);
+    // Create a map of XLSX employees by ID for quick lookup
+    const xlsxEmployeeMap = new Map(xlsxEmployees.map((e) => [e.id, e]));
+    const xlsxIds = new Set(xlsxEmployees.map((e) => e.id));
 
-    // Batch query MongoDB to find which employees exist AND don't have nightWork flag
+    // Fetch ALL MongoDB users (excluding nightWork)
     const usersCollection = await getUsersCollection();
-    const existingUsers = await usersCollection
+    const allMongoUsers = await usersCollection
       .find({
-        employeeId: { $in: employeeIds },
         nightWork: { $ne: true },
       })
-      .project({ employeeId: 1 })
+      .project({ employeeId: 1, firstName: 1, lastName: 1 })
       .toArray();
 
-    const existingIds = new Set(existingUsers.map((u) => u.employeeId));
+    const mongoIds = new Set(allMongoUsers.map((u) => u.employeeId));
 
-    // Filter to employees that exist in MongoDB and don't have nightWork flag
-    const validEmployees = xlsxEmployees
-      .filter((e) => existingIds.has(e.id))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    // Build the merged employee list from all MongoDB users
+    const mergedEmployees = allMongoUsers.map((mongoUser) => {
+      const xlsxEmployee = xlsxEmployeeMap.get(mongoUser.employeeId);
+      return {
+        id: mongoUser.employeeId,
+        // Prefer XLSX name if available, otherwise construct from MongoDB
+        name: xlsxEmployee?.name ?? `${mongoUser.firstName} ${mongoUser.lastName}`,
+        hasXlsx: xlsxIds.has(mongoUser.employeeId),
+      };
+    });
 
-    const filteredCount = xlsxEmployees.length - validEmployees.length;
+    // Sort alphabetically by name
+    mergedEmployees.sort((a, b) => a.name.localeCompare(b.name));
+
+    // Calculate counts
+    const mongoOnlyCount = allMongoUsers.filter(
+      (u) => !xlsxIds.has(u.employeeId)
+    ).length;
+    const filteredCount = xlsxEmployees.filter(
+      (e) => !mongoIds.has(e.id)
+    ).length;
 
     return NextResponse.json({
-      employees: validEmployees,
+      employees: mergedEmployees,
       dateRange,
-      count: validEmployees.length,
+      count: mergedEmployees.length,
       totalInXlsx: xlsxEmployees.length,
+      totalInMongo: allMongoUsers.length,
+      mongoOnlyCount,
       filteredCount,
       updatedEmployees: Array.from(updatedEmployees),
       suspectDaysCounts,

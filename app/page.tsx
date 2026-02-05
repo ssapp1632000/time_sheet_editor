@@ -17,6 +17,7 @@ import { useComparison } from "@/lib/hooks/use-comparison";
 interface Employee {
   id: string;
   name: string;
+  hasXlsx: boolean;
 }
 
 export default function Home() {
