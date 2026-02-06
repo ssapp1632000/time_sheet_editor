@@ -25,6 +25,7 @@ interface Employee {
   id: string;
   name: string;
   hasXlsx: boolean;
+  dateOfJoining: string | null;
 }
 
 interface EmployeeSelectorProps {

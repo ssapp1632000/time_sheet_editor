@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle, FileSpreadsheet, SkipForward, Users } from "lucide-react";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
@@ -8,16 +9,19 @@ import { UploadZone } from "@/components/timesheet/upload-zone";
 import { EmployeeSelector } from "@/components/employee/employee-selector";
 import { ComparisonTable } from "@/components/timesheet/comparison-table";
 import { ComparisonSkeleton } from "@/components/timesheet/loading-skeleton";
+import { DateFilterBar } from "@/components/timesheet/date-filter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useEmployees } from "@/lib/hooks/use-employees";
 import { useComparison } from "@/lib/hooks/use-comparison";
+import type { DateFilter } from "@/types/comparison";
 
 interface Employee {
   id: string;
   name: string;
   hasXlsx: boolean;
+  dateOfJoining: string | null;
 }
 
 export default function Home() {
@@ -25,6 +29,14 @@ export default function Home() {
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(
     null
   );
+  const [filter, setFilter] = useState<DateFilter>(() => {
+    if (typeof window === "undefined") return { mode: "month", month: format(new Date(), "yyyy-MM") };
+    try {
+      const saved = localStorage.getItem("timesheet-date-filter");
+      if (saved) return JSON.parse(saved) as DateFilter;
+    } catch { /* ignore */ }
+    return { mode: "month", month: format(new Date(), "yyyy-MM") };
+  });
 
   // Check if XLSX is already loaded on mount
   useEffect(() => {
@@ -59,10 +71,11 @@ export default function Home() {
   const {
     comparison,
     employee: employeeInfo,
+    dateBounds,
     isLoading: isLoadingComparison,
     error: comparisonError,
     refresh: refreshComparison,
-  } = useComparison(selectedEmployee?.id ?? null);
+  } = useComparison(selectedEmployee?.id ?? null, filter);
 
   // Auto-select first employee when employees load after upload
   useEffect(() => {
@@ -70,6 +83,13 @@ export default function Home() {
       setSelectedEmployee(employees[0]);
     }
   }, [isFileUploaded, employees, selectedEmployee]);
+
+  // Persist filter to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem("timesheet-date-filter", JSON.stringify(filter));
+    } catch { /* ignore */ }
+  }, [filter]);
 
   const handleUploadSuccess = useCallback(() => {
     setIsFileUploaded(true);
@@ -275,6 +295,12 @@ export default function Home() {
                       </div>
                     </CardHeader>
                     <CardContent>
+                      <DateFilterBar
+                        filter={filter}
+                        onFilterChange={setFilter}
+                        dateBounds={dateBounds}
+                        disabled={isLoadingComparison}
+                      />
                       {comparisonError ? (
                         <div className="text-center py-8">
                           <p className="text-destructive mb-4">{comparisonError}</p>

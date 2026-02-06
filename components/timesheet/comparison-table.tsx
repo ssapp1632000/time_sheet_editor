@@ -579,6 +579,8 @@ function DayRow({
   const hasMongoData = day.mongo.firstCheckIn || day.mongo.lastCheckOut;
   // Check if this is a MongoDB-only day (no XLSX data)
   const isMongoOnly = !day.xlsx.in1 && !day.xlsx.out2 && !day.xlsx.netWorkHours;
+  // Check if this is an empty day (no data in either source)
+  const isEmpty = isMongoOnly && !hasMongoData;
 
   // Calculate net hours with dates
   const calculatedNetHours = calculateNetHoursWithDates(
@@ -592,7 +594,7 @@ function DayRow({
     <motion.div
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
-      transition={{ delay: index * 0.02 }}
+      transition={{ delay: Math.min(index * 0.02, 0.5) }}
     >
       <Card
         className={cn(
@@ -601,7 +603,8 @@ function DayRow({
           day.discrepancies.lowHours && "bg-yellow-50/50 dark:bg-yellow-950/20",
           !isSelected && "opacity-50",
           isMarkedForDelete && "border-destructive bg-destructive/10",
-          isMongoOnly && "border-blue-400 dark:border-blue-600",
+          isMongoOnly && hasMongoData && "border-blue-400 dark:border-blue-600",
+          isEmpty && "border-dashed border-muted-foreground/30 opacity-60",
         )}
         onClick={onSelect}
       >
@@ -621,7 +624,15 @@ function DayRow({
               </span>
             </CardTitle>
             <div className="flex items-center gap-2">
-              {isMongoOnly && (
+              {isEmpty && (
+                <Badge
+                  variant="outline"
+                  className="text-muted-foreground"
+                >
+                  No Data
+                </Badge>
+              )}
+              {isMongoOnly && hasMongoData && (
                 <Badge
                   variant="outline"
                   className="border-blue-500 text-blue-600 dark:text-blue-400"

@@ -4,6 +4,38 @@
 export type DataSource = "xlsx" | "mongodb";
 
 /**
+ * Date filter mode for the comparison view
+ */
+export type DateFilterMode = "month" | "range" | "all";
+
+/**
+ * Date filter parameters sent as query params to comparison API
+ */
+export interface DateFilter {
+  mode: DateFilterMode;
+  /** For "month" mode: YYYY-MM format */
+  month?: string;
+  /** For "range" mode: DD/MM/YYYY format */
+  startDate?: string;
+  /** For "range" mode: DD/MM/YYYY format */
+  endDate?: string;
+}
+
+/**
+ * Metadata about the employee's date boundaries
+ */
+export interface DateBounds {
+  /** Earliest possible date (dateOfJoining or earliest record) - DD/MM/YYYY */
+  earliest: string;
+  /** Latest possible date (today) - DD/MM/YYYY */
+  latest: string;
+  /** The XLSX date range if available */
+  xlsxRange: { start: string; end: string } | null;
+  /** Source of the earliest date */
+  earliestSource: "dateOfJoining" | "earliestRecord" | "xlsx";
+}
+
+/**
  * Discrepancies detected for a day
  */
 export interface Discrepancies {
@@ -78,6 +110,8 @@ export interface EmployeeInfo {
 export interface ComparisonResponse {
   employee: EmployeeInfo;
   comparison: ComparisonData;
+  dateBounds: DateBounds;
+  activeFilter: DateFilter;
 }
 
 /**

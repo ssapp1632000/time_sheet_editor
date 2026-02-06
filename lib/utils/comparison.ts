@@ -1,4 +1,4 @@
-import { format } from "date-fns";
+import { format, eachDayOfInterval } from "date-fns";
 import type { EmployeeXlsxData, TimeEntry } from "@/types/xlsx";
 import type {
   ComparisonData,
@@ -248,4 +248,103 @@ function generateIssues(discrepancies: Discrepancies): string[] {
   }
 
   return issues;
+}
+
+/**
+ * Create an empty DayComparison for a date with no data in either source
+ */
+function createEmptyDayComparison(date: Date): DayComparison {
+  const dateKey = format(date, "dd/MM/yyyy");
+  const dayName = format(date, "EEEE");
+
+  return {
+    date: dateKey,
+    dayName,
+    xlsx: {
+      in1: null,
+      in1Date: dateKey,
+      out2: null,
+      out2Date: dateKey,
+      netWorkHours: null,
+    },
+    mongo: {
+      firstCheckIn: null,
+      firstCheckInDate: null,
+      lastCheckOut: null,
+      lastCheckOutDate: null,
+      totalHours: null,
+    },
+    discrepancies: { in1Missing: false, out2Missing: false, lowHours: false },
+    issues: [],
+    selection: { checkIn: "xlsx", checkOut: "xlsx" },
+  };
+}
+
+/**
+ * Generate comparison data for a full date range, including empty days.
+ * Every day in the range gets a DayComparison row, even if no data exists.
+ */
+export function compareTimeDataForRange(
+  startDate: Date,
+  endDate: Date,
+  xlsxData: EmployeeXlsxData | null,
+  mongoAttendance: AttendanceDayDocument[]
+): ComparisonData {
+  // Build maps for O(1) lookup by date key (dd/MM/yyyy)
+  const xlsxByDate = new Map<string, TimeEntry>();
+  if (xlsxData) {
+    for (const entry of xlsxData.entries) {
+      xlsxByDate.set(entry.date, entry);
+    }
+  }
+
+  const mongoByDate = new Map<string, AttendanceDayDocument>();
+  for (const record of mongoAttendance) {
+    const dateKey = format(new Date(record.day), "dd/MM/yyyy");
+    mongoByDate.set(dateKey, record);
+  }
+
+  // Generate every day in the interval
+  const allDays = eachDayOfInterval({ start: startDate, end: endDate });
+
+  const days: DayComparison[] = allDays.map((date) => {
+    const dateKey = format(date, "dd/MM/yyyy");
+    const xlsxEntry = xlsxByDate.get(dateKey);
+    const mongoRecord = mongoByDate.get(dateKey);
+
+    if (xlsxEntry || mongoRecord) {
+      const xlsxDay: XlsxDayData = xlsxEntry
+        ? extractXlsxData(xlsxEntry)
+        : {
+            in1: null,
+            in1Date: dateKey,
+            out2: null,
+            out2Date: dateKey,
+            netWorkHours: null,
+          };
+      const mongoDay = extractMongoData(mongoRecord);
+      const discrepancies = detectDiscrepancies(xlsxDay, mongoDay);
+      const issues = generateIssues(discrepancies);
+
+      return {
+        date: dateKey,
+        dayName: xlsxEntry?.day ?? format(date, "EEEE"),
+        xlsx: xlsxDay,
+        mongo: mongoDay,
+        discrepancies,
+        issues,
+        selection: {
+          checkIn: xlsxEntry ? "xlsx" as const : "mongodb" as const,
+          checkOut: xlsxEntry ? "xlsx" as const : "mongodb" as const,
+        },
+      };
+    }
+
+    return createEmptyDayComparison(date);
+  });
+
+  return {
+    days,
+    totalIssues: days.reduce((sum, day) => sum + day.issues.length, 0),
+  };
 }

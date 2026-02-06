@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
+import { startOfMonth, endOfMonth, parse, format, max, min } from "date-fns";
 import { getEmployeeById, isXlsxLoaded, getDateRange } from "@/lib/xlsx/store";
 import {
   findUserByEmployeeId,
   getAttendanceForUser,
+  getAttendanceCollection,
 } from "@/lib/db/mongodb";
-import { compareTimeData } from "@/lib/utils/comparison";
-import { parseDateString } from "@/lib/utils/time";
-import type { ComparisonResponse } from "@/types/comparison";
+import { compareTimeDataForRange } from "@/lib/utils/comparison";
+import { parseDateString, formatDateString } from "@/lib/utils/time";
+import type {
+  ComparisonResponse,
+  DateFilter,
+  DateFilterMode,
+  DateBounds,
+} from "@/types/comparison";
 
 export async function GET(
   request: NextRequest,
@@ -14,24 +21,22 @@ export async function GET(
 ) {
   try {
     const { employeeId } = await params;
+    const searchParams = request.nextUrl.searchParams;
 
-    if (!(await isXlsxLoaded())) {
-      return NextResponse.json(
-        { error: "XLSX file not loaded. Please upload a file first." },
-        { status: 400 }
-      );
-    }
+    // Parse filter params
+    const mode = (searchParams.get("mode") as DateFilterMode) || "month";
+    const monthParam = searchParams.get("month"); // YYYY-MM
+    const startDateParam = searchParams.get("startDate"); // DD/MM/YYYY
+    const endDateParam = searchParams.get("endDate"); // DD/MM/YYYY
 
-    // Get XLSX data for this employee (may be undefined or have empty entries)
-    const xlsxData = await getEmployeeById(employeeId);
+    // Get XLSX data (may be null if not loaded or employee not in XLSX)
+    const xlsxLoaded = await isXlsxLoaded();
+    const xlsxData = xlsxLoaded ? await getEmployeeById(employeeId) : undefined;
+    const dateRange = xlsxLoaded ? await getDateRange() : null;
 
-    // Get date range from XLSX (needed for MongoDB query)
-    const dateRange = await getDateRange();
-
-    // Fetch user from MongoDB to verify they exist
+    // Fetch user from MongoDB
     const user = await findUserByEmployeeId(employeeId);
 
-    // If employee doesn't exist in XLSX AND doesn't exist in MongoDB, return 404
     if (!xlsxData && !user) {
       return NextResponse.json(
         { error: "Employee not found" },
@@ -39,40 +44,129 @@ export async function GET(
       );
     }
 
-    // Fetch MongoDB data
+    // Determine date bounds
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+
+    let earliest: Date;
+    let earliestSource: DateBounds["earliestSource"];
+
+    if (user?.dateOfJoining) {
+      earliest = new Date(user.dateOfJoining);
+      earliestSource = "dateOfJoining";
+    } else if (dateRange) {
+      const xlsxStart = parseDateString(dateRange.start);
+      earliest = xlsxStart ?? today;
+      earliestSource = "xlsx";
+    } else if (user) {
+      // Try to find the earliest attendance record
+      const attendanceCol = await getAttendanceCollection();
+      const earliestRecord = await attendanceCol
+        .find({ user: user._id })
+        .sort({ day: 1 })
+        .limit(1)
+        .toArray();
+      if (earliestRecord.length > 0) {
+        earliest = new Date(earliestRecord[0].day);
+        earliestSource = "earliestRecord";
+      } else {
+        earliest = today;
+        earliestSource = "earliestRecord";
+      }
+    } else {
+      earliest = today;
+      earliestSource = "xlsx";
+    }
+
+    const dateBounds: DateBounds = {
+      earliest: formatDateString(earliest),
+      latest: formatDateString(today),
+      xlsxRange: dateRange,
+      earliestSource,
+    };
+
+    // Apply filter to determine query range
+    let queryStart: Date;
+    let queryEnd: Date;
+
+    switch (mode) {
+      case "month": {
+        const monthDate = monthParam
+          ? parse(monthParam, "yyyy-MM", new Date())
+          : new Date();
+        queryStart = max([startOfMonth(monthDate), earliest]);
+        queryEnd = min([endOfMonth(monthDate), today]);
+        break;
+      }
+      case "range": {
+        const rangeStart = startDateParam
+          ? parseDateString(startDateParam)
+          : null;
+        const rangeEnd = endDateParam ? parseDateString(endDateParam) : null;
+        queryStart = max([rangeStart ?? earliest, earliest]);
+        queryEnd = min([rangeEnd ?? today, today]);
+        break;
+      }
+      case "all": {
+        queryStart = earliest;
+        queryEnd = today;
+        break;
+      }
+    }
+
+    // Ensure queryStart <= queryEnd
+    if (queryStart > queryEnd) {
+      queryStart = queryEnd;
+    }
+
+    // Fetch MongoDB attendance for the query range
     let mongoAttendance: Awaited<ReturnType<typeof getAttendanceForUser>> = [];
 
     try {
-      if (user && dateRange) {
-        const startDate = parseDateString(dateRange.start);
-        const endDate = parseDateString(dateRange.end);
-
-        if (startDate && endDate) {
-          mongoAttendance = await getAttendanceForUser(
-            user._id,
-            startDate,
-            endDate
-          );
-        }
+      if (user) {
+        mongoAttendance = await getAttendanceForUser(
+          user._id,
+          queryStart,
+          queryEnd
+        );
       }
     } catch (dbError) {
       console.error("MongoDB fetch error:", dbError);
-      // Continue without MongoDB data - comparison will show xlsx only
     }
 
-    // Perform comparison (now handles null/empty xlsxData)
-    const comparison = compareTimeData(xlsxData ?? null, mongoAttendance);
+    // Generate comparison with all days in range
+    const comparison = compareTimeDataForRange(
+      queryStart,
+      queryEnd,
+      xlsxData ?? null,
+      mongoAttendance
+    );
 
-    // Build employee info - prefer XLSX, fall back to MongoDB user
+    // Build employee info
     const employeeInfo = {
       id: employeeId,
-      name: xlsxData?.employeeName ?? (user ? `${user.firstName} ${user.lastName}` : "Unknown"),
+      name:
+        xlsxData?.employeeName ??
+        (user ? `${user.firstName} ${user.lastName}` : "Unknown"),
       company: xlsxData?.company ?? "N/A",
     };
+
+    // Build active filter echo
+    const activeFilter: DateFilter = { mode };
+    if (mode === "month") {
+      activeFilter.month =
+        monthParam || format(new Date(), "yyyy-MM");
+    }
+    if (mode === "range") {
+      activeFilter.startDate = formatDateString(queryStart);
+      activeFilter.endDate = formatDateString(queryEnd);
+    }
 
     const response: ComparisonResponse = {
       employee: employeeInfo,
       comparison,
+      dateBounds,
+      activeFilter,
     };
 
     return NextResponse.json(response);
