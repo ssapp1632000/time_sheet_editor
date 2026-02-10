@@ -72,6 +72,7 @@ export interface AttendanceDayDocument {
   totalSeconds: number;
   isActive: boolean;
   isNightWork: boolean;
+  forgotToCheckOut?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

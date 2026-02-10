@@ -145,6 +145,7 @@ export async function POST(
               $set: {
                 periods: [newPeriod],
                 totalSeconds,
+                forgotToCheckOut: false,
                 updatedAt: new Date(),
               },
               $unset: {
@@ -169,6 +170,7 @@ export async function POST(
             totalSeconds,
             isActive: false,
             isNightWork: false,
+            forgotToCheckOut: false,
             createdAt: new Date(),
             updatedAt: new Date(),
           };
