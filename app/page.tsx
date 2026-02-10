@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle, FileSpreadsheet, SkipForward, Users } from "lucide-react";
@@ -28,6 +28,11 @@ export default function Home() {
   const [isFileUploaded, setIsFileUploaded] = useState<boolean | null>(null); // null = checking
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(
     null
+  );
+  const savedEmployeeIdRef = useRef<string | null>(
+    typeof window !== "undefined"
+      ? localStorage.getItem("timesheet-selected-employee")
+      : null
   );
   const [filter, setFilter] = useState<DateFilter>(() => {
     if (typeof window === "undefined") return { mode: "month", month: format(new Date(), "yyyy-MM") };
@@ -77,12 +82,30 @@ export default function Home() {
     refresh: refreshComparison,
   } = useComparison(selectedEmployee?.id ?? null, filter);
 
-  // Auto-select first employee when employees load after upload
+  // Auto-select saved employee (or first) when employees load after upload
   useEffect(() => {
     if (isFileUploaded && employees.length > 0 && !selectedEmployee) {
+      const savedId = savedEmployeeIdRef.current;
+      if (savedId) {
+        const saved = employees.find((e) => e.id === savedId);
+        if (saved) {
+          setSelectedEmployee(saved);
+          savedEmployeeIdRef.current = null;
+          return;
+        }
+      }
       setSelectedEmployee(employees[0]);
     }
   }, [isFileUploaded, employees, selectedEmployee]);
+
+  // Persist selected employee to localStorage
+  useEffect(() => {
+    try {
+      if (selectedEmployee) {
+        localStorage.setItem("timesheet-selected-employee", selectedEmployee.id);
+      }
+    } catch { /* ignore */ }
+  }, [selectedEmployee]);
 
   // Persist filter to localStorage
   useEffect(() => {
