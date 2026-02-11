@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle, FileSpreadsheet, SkipForward, Users } from "lucide-react";
+import { CheckCircle, FileSpreadsheet, Loader2, SkipForward, Users } from "lucide-react";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { UploadZone } from "@/components/timesheet/upload-zone";
 import { EmployeeSelector } from "@/components/employee/employee-selector";
@@ -62,7 +62,6 @@ export default function Home() {
 
   const {
     employees,
-    dateRange,
     count: employeeCount,
     totalInXlsx,
     filteredCount,
@@ -113,6 +112,31 @@ export default function Home() {
       localStorage.setItem("timesheet-date-filter", JSON.stringify(filter));
     } catch { /* ignore */ }
   }, [filter]);
+
+  const [syncState, setSyncState] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [syncMessage, setSyncMessage] = useState("");
+
+  const handleSyncLeaves = useCallback(async () => {
+    setSyncState("loading");
+    setSyncMessage("");
+    try {
+      const res = await fetch("https://app.ssarchitects.ae/api/v1/leaves/sync", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        setSyncState("success");
+        setSyncMessage(data.message);
+        setTimeout(() => setSyncState("idle"), 3000);
+      } else {
+        setSyncState("error");
+        setSyncMessage(data.message || "Sync failed");
+        setTimeout(() => setSyncState("idle"), 5000);
+      }
+    } catch {
+      setSyncState("error");
+      setSyncMessage("Network error");
+      setTimeout(() => setSyncState("idle"), 5000);
+    }
+  }, []);
 
   const handleUploadSuccess = useCallback(() => {
     setIsFileUploaded(true);
@@ -169,11 +193,20 @@ export default function Home() {
             <h1 className="text-xl font-semibold">Timesheet Editor</h1>
           </div>
           <div className="flex items-center gap-4">
-            {dateRange && (
-              <Badge variant="outline" className="hidden sm:flex">
-                {dateRange.start} - {dateRange.end}
-              </Badge>
-            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSyncLeaves}
+              disabled={syncState === "loading"}
+              className="gap-2"
+            >
+              {syncState === "loading" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : syncState === "success" ? (
+                <CheckCircle className="h-4 w-4 text-green-500" />
+              ) : null}
+              {syncState === "success" ? "Synced!" : syncState === "error" ? syncMessage : "Sync Leaves"}
+            </Button>
             <ThemeToggle />
           </div>
         </div>
@@ -244,11 +277,6 @@ export default function Home() {
                         </Badge>
                       )}
                     </div>
-                    {dateRange && (
-                      <Badge variant="outline" className="sm:hidden w-fit">
-                        {dateRange.start} - {dateRange.end}
-                      </Badge>
-                    )}
                   </div>
                 </CardHeader>
                 <CardContent>
