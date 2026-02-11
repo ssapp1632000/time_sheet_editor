@@ -26,13 +26,11 @@ export async function GET() {
     const xlsxEmployeeMap = new Map(xlsxEmployees.map((e) => [e.id, e]));
     const xlsxIds = new Set(xlsxEmployees.map((e) => e.id));
 
-    // Fetch ALL MongoDB users (excluding nightWork)
+    // Fetch ALL MongoDB users
     const usersCollection = await getUsersCollection();
     const allMongoUsers = await usersCollection
-      .find({
-        nightWork: { $ne: true },
-      })
-      .project({ employeeId: 1, firstName: 1, lastName: 1, dateOfJoining: 1 })
+      .find({})
+      .project({ employeeId: 1, firstName: 1, lastName: 1, dateOfJoining: 1, nightWork: 1 })
       .toArray();
 
     const mongoIds = new Set(allMongoUsers.map((u) => u.employeeId));
@@ -46,6 +44,7 @@ export async function GET() {
         name: xlsxEmployee?.name ?? `${mongoUser.firstName} ${mongoUser.lastName}`,
         hasXlsx: xlsxIds.has(mongoUser.employeeId),
         dateOfJoining: mongoUser.dateOfJoining ?? null,
+        nightWork: mongoUser.nightWork === true,
       };
     });
 

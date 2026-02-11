@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Fuse from "fuse.js";
-import { Check, CheckCircle, ChevronsUpDown, User, AlertTriangle } from "lucide-react";
+import { Check, CheckCircle, ChevronsUpDown, Moon, User, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +26,7 @@ interface Employee {
   name: string;
   hasXlsx: boolean;
   dateOfJoining: string | null;
+  nightWork?: boolean;
 }
 
 interface EmployeeSelectorProps {
@@ -139,6 +140,13 @@ export function EmployeeSelector({
                         {employee.id}
                       </span>
                       <span className="truncate flex-1">{employee.name}</span>
+                      {/* Badge for night work employees */}
+                      {employee.nightWork && (
+                        <Badge variant="outline" className="ml-2 text-xs text-indigo-400 border-indigo-400 dark:text-indigo-300 dark:border-indigo-500">
+                          <Moon className="h-3 w-3 mr-1" />
+                          Night
+                        </Badge>
+                      )}
                       {/* Badge for MongoDB-only employees (no XLSX data) */}
                       {!employee.hasXlsx && (
                         <Badge variant="outline" className="ml-2 text-xs text-orange-600 border-orange-400">
